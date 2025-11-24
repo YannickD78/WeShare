@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/db.php';
 
 /**
- * JSON file read/write utilities
+ * JSON file read/write utilities (à changer plus tard pour la base de données)
  */
 function load_json(string $file): array
 {
@@ -25,7 +26,7 @@ function save_json(string $file, array $data): void
 /**
  * User-related functions
  */
-function load_users(): array
+/*function load_users(): array
 {
     return load_json(USERS_FILE);
 }
@@ -33,9 +34,9 @@ function load_users(): array
 function save_users(array $users): void
 {
     save_json(USERS_FILE, $users);
-}
+}*/
 
-function find_user_by_email(string $email): ?array
+/*function find_user_by_email(string $email): ?array
 {
     $users = load_users();
     $email = strtolower(trim($email));
@@ -45,9 +46,20 @@ function find_user_by_email(string $email): ?array
         }
     }
     return null;
+}*/
+
+function find_user_by_email(string $email): ?array
+{
+    global $pdo;
+
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->execute([strtolower(trim($email))]);
+    
+    $user = $stmt->fetch();
+    return $user ?: null;
 }
 
-function create_user(string $name, string $email, string $password): array
+/*function create_user(string $name, string $email, string $password): array
 {
     $users = load_users();
 
@@ -66,6 +78,28 @@ function create_user(string $name, string $email, string $password): array
     save_users($users);
 
     return $user;
+}*/
+
+function create_user(string $name, string $email, string $password): array
+{
+    global $pdo;
+
+    if (find_user_by_email($email)) {
+        throw new Exception("Cet email est déjà utilisé.");
+    }
+
+    $emailClean = strtolower(trim($email));
+    $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+
+    $sql = "INSERT INTO users (nom, email, password) VALUES (?, ?, ?)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$name, $emailClean, $passwordHash]);
+
+    return [
+        'id' => $pdo->lastInsertId(),
+        'nom' => $name,
+        'email' => $emailClean
+    ];
 }
 
 function authenticate(string $email, string $password): ?array
@@ -84,7 +118,7 @@ function login_user(array $user): void
 {
     $_SESSION['user'] = [
         'id' => $user['id'],
-        'name' => $user['name'],
+        'name' => $user['nom'],
         'email' => $user['email'],
     ];
 }
@@ -103,7 +137,7 @@ function require_login(): void
 }
 
 /**
- * Project-related functions
+ * Project-related functions (à changer plus tard pour la base de données)
  */
 function load_projects(): array
 {
