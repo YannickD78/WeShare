@@ -89,6 +89,7 @@ usort($member_projects, function($a, $b) {
                     </ul>
                 <?php endif; ?>
 
+        
                 <h4>Tâches</h4>
                 <?php if (empty($project['tasks'])): ?>
                     <p>Aucune tâche définie.</p>
@@ -103,6 +104,9 @@ usort($member_projects, function($a, $b) {
                                 </tr>
                             </thead>
                             <tbody>
+                                <?php
+                                $is_done = ($project['status'] ?? 'active') === 'done';
+                                ?>
                                 <?php foreach ($project['tasks'] as $task):
                                     $is_my_task = (strtolower($task['assigned_to']) === $email);
                                     ?>
@@ -110,7 +114,7 @@ usort($member_projects, function($a, $b) {
                                         <td><?= htmlspecialchars($task['title']) ?></td>
                                         <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
                                         <td>
-                                            <?php if ($is_my_task): ?>
+                                            <?php if ($is_my_task && !$is_done): ?> <!-- si le projet n'est pas terminé, permettre la modification -->
                                                 <form method="post" action="update_task.php">
                                                     <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
                                                     <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
