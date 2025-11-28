@@ -56,17 +56,35 @@ usort($member_projects, function ($a, $b) {
         <?php foreach ($created_projects as $project): ?>
             <article class="project-card">
                 <h3><?= htmlspecialchars($project['name']) ?></h3>
-                <!-- Clôturation -->
                 <?php if (($project['status'] ?? 'active') !== 'done'): ?>
-                    <form method="post" action="cloturer_project.php" style="margin-top:8px;">
-                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                        <button type="submit" class="btn-secondary"
-                            onclick="return confirm('Êtes-vous sûr de vouloir clôturer ce projet ?')">
-                            Clôturer le projet
-                        </button>
-                    </form>
+                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+                        <a href="modify_project.php?id=<?= htmlspecialchars($project['id']) ?>" 
+                           class="btn-secondary" 
+                           style="display:inline-block;">
+                            Modifier le projet
+                        </a>
+
+                        <form method="post" action="cloturer_project.php" style="margin:0;">
+                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                            <button type="submit" class="btn-secondary"
+                                onclick="return confirm('Êtes-vous sûr de vouloir clôturer ce projet ?')"
+                                style="display:inline-block;">
+                                Clôturer le projet
+                            </button>
+                        </form>
+                    </div>
                 <?php else: ?>
-                    <span style="color: green; font-weight: bold;">(Terminé)</span>
+                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+                        <span style="color: green; font-weight: bold;">(Terminé)</span>
+                        <form method="post" action="delete_project.php" style="margin:0;">
+                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                            <button type="submit" class="btn-secondary"
+                                onclick="return confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')"
+                                style="display:inline-block; background-color: #e74c3c; color: white;">
+                                🗑️ Supprimer le projet
+                            </button>
+                        </form>
+                    </div>
                 <?php endif; ?>
 
                 <?php if (!empty($project['description'])): ?>
@@ -186,10 +204,15 @@ usort($member_projects, function ($a, $b) {
                 });
                 ?>
 
+                <div class="tasks-toggle">
+                    <button class="btn-toggle active" data-project="<?= htmlspecialchars($project['id']) ?>" data-view="mine" onclick="toggleTasksView('<?= htmlspecialchars($project['id']) ?>')">Mes tâches</button>
+                    <button class="btn-toggle" data-project="<?= htmlspecialchars($project['id']) ?>" data-view="all" onclick="toggleTasksView('<?= htmlspecialchars($project['id']) ?>')">Toutes les tâches</button>
+                </div>
+
                 <?php if (!$my_tasks): ?>
                     <p>Aucune tâche ne vous est assignée.</p>
                 <?php else: ?>
-                    <div class="table-wrapper">
+                    <div class="table-wrapper" data-project="<?= htmlspecialchars($project['id']) ?>" data-table="mine">
                         <table>
                             <thead>
                                 <tr>
@@ -221,6 +244,45 @@ usort($member_projects, function ($a, $b) {
                         </table>
                     </div>
                 <?php endif; ?>
+
+                <div class="table-wrapper" data-project="<?= htmlspecialchars($project['id']) ?>" data-table="all" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tâche</th>
+                                <th>Assigné à</th>
+                                <th>Statut</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($project['tasks'] as $task): ?>
+                                <?php $is_my_task = (strtolower($task['assigned_to']) === $email); ?>
+                                <tr class="<?= $is_my_task ? 'my-task' : '' ?>">
+                                    <td><?= htmlspecialchars($task['title']) ?></td>
+                                    <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
+                                    <td>
+                                        <?php if ($is_my_task): ?>
+                                            <form method="post" action="update_task.php">
+                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                <select name="status" onchange="this.form.submit()">
+                                                    <option value="todo" <?= $task['status'] === 'todo' ? 'selected' : '' ?>>À faire
+                                                    </option>
+                                                    <option value="in_progress" <?= $task['status'] === 'in_progress' ? 'selected' : '' ?>>
+                                                        En cours</option>
+                                                    <option value="done" <?= $task['status'] === 'done' ? 'selected' : '' ?>>Terminé
+                                                    </option>
+                                                </select>
+                                            </form>
+                                        <?php else: ?>
+                                            <?= htmlspecialchars(status_label($task['status'])) ?>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             </article>
         <?php endforeach; ?>
     <?php endif; ?>

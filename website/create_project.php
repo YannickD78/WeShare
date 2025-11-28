@@ -46,8 +46,9 @@ $user = current_user();
 
         <div id="members-container">
             <div class="member-row">
-                <input type="text" name="member_name[]" placeholder="Nom du membre">
-                <input type="email" name="member_email[]" placeholder="Email du membre">
+                <input type="text" name="member_name[]" placeholder="Nom du membre" data-temp="true">
+                <input type="email" name="member_email[]" placeholder="Email du membre" data-temp="true">
+                <button type="button" class="btn-secondary btn-confirm" onclick="confirmMember(this)">✓ Confirmer</button>
             </div>
         </div>
         <button type="button" class="btn-secondary" onclick="addMemberRow()">+ Ajouter un membre</button>
@@ -55,15 +56,17 @@ $user = current_user();
 
         <h2>Tâches du projet</h2>
         <p class="hint">
-            Créez les tâches et (facultatif) indiquez l’email de la personne responsable.
-            Exemple : “Sortir les poubelles”, “Préparer le plan du voyage”...
+            Créez les tâches et assignez-les à un membre du projet.
+            Exemple : "Sortir les poubelles", "Préparer le plan du voyage"...
         </p>
 
         <div id="tasks-container">
             <div class="task-row">
                 <input type="text" name="task_title[]" placeholder="Titre de la tâche">
-                <input type="email" name="task_assigned_to[]"
-                    placeholder="Email de la personne responsable (facultatif)">
+                <select name="task_assigned_to[]">
+                    <option value="">-- Non assigné --</option>
+                </select>
+                <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
             </div>
         </div>
         <button type="button" class="btn-secondary" onclick="addTaskRow()">+ Ajouter une tâche</button>
