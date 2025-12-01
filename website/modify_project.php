@@ -115,6 +115,10 @@ $is_creator = (strtolower($project['creator_email']) === $user_email);
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <select name="task_mode[]" class="task-mode-select" title="Mode d'évaluation">
+                        <option value="status" <?= ($task['mode'] ?? 'status') === 'status' ? 'selected' : '' ?>>Statut</option>
+                        <option value="bar" <?= ($task['mode'] ?? 'status') === 'bar' ? 'selected' : '' ?>>Barre</option>
+                    </select>
                     <input type="hidden" name="task_id[]" value="<?= htmlspecialchars($task['id']) ?>">
                     <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
                 </div>

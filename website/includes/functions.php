@@ -146,8 +146,32 @@ function load_projects(): array
 
 function save_projects(array $projects): void
 {
-    save_json(PROJECTS_FILE, $projects);
+    $tmpFile = PROJECTS_FILE . '.tmp';
+
+    // Encode en JSON propre
+    $json = json_encode($projects, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+    // Écrit dans un fichier temporaire avec verrou
+    $fp = fopen($tmpFile, 'c');
+    if (!$fp) {
+        throw new Exception("Impossible d'écrire dans le fichier temporaire.");
+    }
+
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        throw new Exception("Impossible de verrouiller le fichier des projets.");
+    }
+
+    ftruncate($fp, 0);
+    fwrite($fp, $json);
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    // Remplace le fichier original
+    rename($tmpFile, PROJECTS_FILE);
 }
+
 
 function generate_id(string $prefix = ''): string
 {

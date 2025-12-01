@@ -54,14 +54,22 @@ if (!$already_in) {
     ];
 }
 
-// 处理任务
+// Traiter les tâches - au départ pas de progress/status, juste titre et assigné
 $tasks = [];
 $task_titles = $_POST['task_title'] ?? [];
 $task_assigned_to = $_POST['task_assigned_to'] ?? [];
+$task_modes = $_POST['task_mode'] ?? [];
 
 for ($i = 0; $i < count($task_titles); $i++) {
     $title = trim($task_titles[$i] ?? '');
     $assigned_email = trim($task_assigned_to[$i] ?? '');
+    $mode = trim($task_modes[$i] ?? 'status');
+    
+    // Valider le mode
+    if ($mode !== 'bar') {
+        $mode = 'status';
+    }
+    
     if ($title === '') {
         continue;
     }
@@ -70,6 +78,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         'title' => $title,
         'assigned_to' => strtolower($assigned_email),
         'status' => 'todo',
+        'progress' => 0,
+        'mode' => $mode,
     ];
 }
 

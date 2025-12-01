@@ -7,34 +7,83 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$project_id = $_POST['project_id'] ?? '';
-$task_id = $_POST['task_id'] ?? '';
-$status = $_POST['status'] ?? 'todo';
+$project_id = $_POST['project_id'] ?? null;
+$task_id    = $_POST['task_id'] ?? null;
+$status     = $_POST['status'] ?? null;
+$progress   = $_POST['progress'] ?? null;
 
 $allowed_status = ['todo', 'in_progress', 'done'];
-if (!in_array($status, $allowed_status, true)) {
-    $status = 'todo';
+$changed = false;
+
+
+if (!$project_id || !$task_id) {
+    sendResponse(false, "Paramètres manquants.");
 }
 
 $projects = load_projects();
-$changed = false;
+
 
 foreach ($projects as &$project) {
     if ($project['id'] !== $project_id) {
         continue;
     }
+
     foreach ($project['tasks'] as &$task) {
-        if ($task['id'] === $task_id) {
+        if ($task['id'] !== $task_id) {
+            continue;
+        }
+
+        // Mise à jour status
+        if ($status !== null) {
+            if (!in_array($status, $allowed_status, true)) {
+                sendResponse(false, "Statut invalide.");
+            }
             $task['status'] = $status;
             $changed = true;
-            break 2;
         }
+
+        // Mise à jour progress
+        if ($progress !== null) {
+            $pv = intval($progress);
+            if ($pv < 0 || $pv > 100) {
+                sendResponse(false, "Progression invalide.");
+            }
+            $task['progress'] = $pv;
+            $changed = true;
+        }
+
+        break 2; 
     }
 }
 
-if ($changed) {
-    save_projects($projects);
+
+if (!$changed) {
+    sendResponse(false, "Aucune modification effectuée.");
 }
 
-header('Location: dashboard.php');
-exit;
+// Sauvegarde sécurisée
+save_projects($projects);
+
+sendResponse(true, "Mise à jour réussie.");
+
+
+// -------------------------------------
+// Fonction utilitaire de réponse AJAX
+// -------------------------------------
+function sendResponse(bool $success, string $msg)
+{
+    $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+        && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => $success,
+            'message' => $msg
+        ]);
+        exit;
+    }
+
+    header('Location: dashboard.php');
+    exit;
+}

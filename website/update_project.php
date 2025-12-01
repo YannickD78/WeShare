@@ -9,6 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Stocker le mode de progression choisi
+$progress_mode = $_POST['progress_mode'] ?? ($project['progress_mode'] ?? 'status');
+
 $project_id = $_POST['project_id'] ?? null;
 $name = trim($_POST['project_name'] ?? '');
 $description = trim($_POST['project_description'] ?? '');
@@ -91,16 +94,23 @@ if (!$already_in) {
     ];
 }
 
-// Traiter les tâches
+// Traiter les tâches - conserver status/progress existants
 $tasks = [];
 $task_titles = $_POST['task_title'] ?? [];
 $task_assigned_to = $_POST['task_assigned_to'] ?? [];
 $task_ids = $_POST['task_id'] ?? [];
+$task_modes = $_POST['task_mode'] ?? [];
 
 for ($i = 0; $i < count($task_titles); $i++) {
     $title = trim($task_titles[$i] ?? '');
     $assigned_email = trim($task_assigned_to[$i] ?? '');
     $task_id = $task_ids[$i] ?? null;
+    $mode = trim($task_modes[$i] ?? 'status');
+    
+    // Valider le mode
+    if ($mode !== 'bar') {
+        $mode = 'status';
+    }
     
     if ($title === '') {
         continue;
@@ -111,11 +121,13 @@ for ($i = 0; $i < count($task_titles); $i++) {
         $task_id = generate_id('t_');
     }
     
-    // Chercher la tâche existante pour récupérer son statut
+    // Chercher la tâche existante pour récupérer son statut et progression
     $status = 'todo';
+    $progress = 0;
     foreach ($project['tasks'] as $old_task) {
         if ($old_task['id'] === $task_id) {
             $status = $old_task['status'] ?? 'todo';
+            $progress = $old_task['progress'] ?? 0;
             break;
         }
     }
@@ -125,6 +137,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         'title' => $title,
         'assigned_to' => strtolower($assigned_email),
         'status' => $status,
+        'progress' => $progress,
+        'mode' => $mode,
     ];
 }
 

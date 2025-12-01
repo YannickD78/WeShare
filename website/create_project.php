@@ -30,6 +30,12 @@ $user = current_user();
             Invitez vos colocataires, camarades de classe ou amis pour le projet.
             Vous êtes automatiquement inclus comme créateur.
         </p>
+        
+        <?php 
+        $user = current_user();
+        $user_name = htmlspecialchars($user['name'] ?? '');
+        $user_email = htmlspecialchars($user['email'] ?? '');
+        ?>
 
         <!--new things added -->
         <button type="button" class="btn-secondary invite-link-btn" onclick="toggleInviteLink()">
@@ -45,13 +51,15 @@ $user = current_user();
         </div>
 
         <div id="members-container">
-            <div class="member-row">
-                <input type="text" name="member_name[]" placeholder="Nom du membre" data-temp="true">
-                <input type="email" name="member_email[]" placeholder="Email du membre" data-temp="true">
-                <button type="button" class="btn-secondary btn-confirm" onclick="confirmMember(this)">✓ Confirmer</button>
+            <!-- Créateur du projet (non modifiable) -->
+            <div class="member-row" style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 4px; opacity: 0.9;">
+                <input type="text" name="member_name[]" value="<?php echo $user_name; ?>" readonly style="flex: 1; background: #e8e8e8;">
+                <input type="email" name="member_email[]" value="<?php echo $user_email; ?>" readonly style="flex: 1; background: #e8e8e8;">
+                <span style="background: #007bff; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; white-space: nowrap;">Créateur</span>
             </div>
         </div>
-        <button type="button" class="btn-secondary" onclick="addMemberRow()">+ Ajouter un membre</button>
+        <div id="members-new-container"></div>
+        <button type="button" class="btn-secondary" onclick="addNewMemberRow()">+ Ajouter un membre</button>
 
 
         <h2>Tâches du projet</h2>
@@ -66,6 +74,10 @@ $user = current_user();
                 <select name="task_assigned_to[]">
                     <option value="">-- Non assigné --</option>
                 </select>
+                <select name="task_mode[]" class="task-mode-select" title="Mode d'évaluation">
+                    <option value="status">Statut</option>
+                    <option value="bar">Barre</option>
+                </select>
                 <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
             </div>
         </div>
@@ -79,3 +91,12 @@ $user = current_user();
 </section>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
+
+<script>
+// Ensure task assignee dropdowns are populated on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof updateTaskAssigneeSelects === 'function') {
+        updateTaskAssigneeSelects();
+    }
+});
+</script>
