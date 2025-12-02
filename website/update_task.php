@@ -38,11 +38,19 @@ foreach ($projects as &$project) {
                 sendResponse(false, "Statut invalide.");
             }
             
-            // For recurring tasks with a specific date, update daily_progress
-            // Store status as progress value: done=100, in_progress=50, todo=0
+            // For recurring tasks with a specific date, update daily_progress or daily_status
             if (($task['is_recurring'] ?? false) && $dateOrDay) {
-                $statusValue = ($status === 'done') ? 100 : (($status === 'in_progress') ? 50 : 0);
-                set_daily_progress($task, $dateOrDay, $statusValue);
+                if (($task['mode'] ?? 'status') === 'bar') {
+                    // For bar mode, convert status to progress value: done=100, in_progress=50, todo=0
+                    $statusValue = ($status === 'done') ? 100 : (($status === 'in_progress') ? 50 : 0);
+                    set_daily_progress($task, $dateOrDay, $statusValue);
+                } else {
+                    // For status mode, store the actual status
+                    if (!isset($task['daily_status'])) {
+                        $task['daily_status'] = [];
+                    }
+                    $task['daily_status'][$dateOrDay] = $status;
+                }
             } else {
                 // For non-recurring tasks, update global status
                 $task['status'] = $status;
@@ -50,13 +58,20 @@ foreach ($projects as &$project) {
             $changed = true;
         }
 
-        // Mise à jour progress (non-recurring or global for recurring)
+        // Mise à jour progress
         if ($progress !== null) {
             $pv = intval($progress);
             if ($pv < 0 || $pv > 100) {
                 sendResponse(false, "Progression invalide.");
             }
-            $task['progress'] = $pv;
+            
+            // For recurring tasks with a specific date, update daily_progress
+            if (($task['is_recurring'] ?? false) && $dateOrDay) {
+                set_daily_progress($task, $dateOrDay, $pv);
+            } else {
+                // For non-recurring tasks, update global progress
+                $task['progress'] = $pv;
+            }
             $changed = true;
         }
 
@@ -71,6 +86,20 @@ if (!$changed) {
 // Sauvegarde sécurisée
 try {
     save_projects($projects);
+    
+    // For AJAX responses, send more detailed information
+    if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => true,
+            'message' => "Mise à jour réussie.",
+            'progress' => intval($_POST['progress'] ?? 0),
+            'status' => $_POST['status'] ?? null,
+            'date' => $dateOrDay
+        ]);
+        exit;
+    }
+    
     sendResponse(true, "Mise à jour réussie.");
 } catch (Exception $e) {
     sendResponse(false, "Erreur de sauvegarde: " . $e->getMessage());

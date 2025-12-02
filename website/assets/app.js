@@ -252,12 +252,58 @@ window.updateTaskAjax = function(form) {
     const taskId = formData.get('task_id');
     const status = formData.get('status');
     const progress = formData.get('progress');
+    let date = formData.get('date');
+    
+    // Check if this is a recurring task (date field exists but is empty, and there are day-buttons nearby)
+    const dateInput = form.querySelector('input[name="date"]');
+    const taskRow = form.closest('tr');
+    const dayButtons = taskRow ? taskRow.querySelectorAll('.day-btn') : [];
+    
+    if (dateInput && !date && dayButtons.length > 0) {
+        // This is a recurring task without a selected date
+        // Auto-fill the closest day
+        const dayMap = {'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6};
+        const today = new Date();
+        const currentDay = today.getDay();
+        
+        let closestButton = null;
+        let minDaysAhead = Infinity;
+        
+        dayButtons.forEach(btn => {
+            const dayAttr = btn.getAttribute('data-day');
+            const targetDayNum = dayMap[dayAttr];
+            let daysToAdd = (targetDayNum - currentDay + 7) % 7;
+            
+            if (daysToAdd < minDaysAhead) {
+                minDaysAhead = daysToAdd;
+                closestButton = btn;
+            }
+        });
+        
+        if (closestButton) {
+            const dayAttr = closestButton.getAttribute('data-day');
+            const targetDayNum = dayMap[dayAttr];
+            let daysToAdd = (targetDayNum - currentDay + 7) % 7;
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + daysToAdd);
+            
+            const year = targetDate.getFullYear();
+            const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+            const dateNum = String(targetDate.getDate()).padStart(2, '0');
+            date = `${year}-${month}-${dateNum}`;
+            
+            // Update both the form input and the FormData
+            dateInput.value = date;
+            formData.set('date', date);
+        }
+    }
     
     console.log('Envoi AJAX:', {
         project_id: projectId,
         task_id: taskId,
         status: status,
-        progress: progress
+        progress: progress,
+        date: date
     });
     
     // Send via fetch with AJAX header
@@ -289,6 +335,15 @@ window.updateTaskAjax = function(form) {
                         select.value = status;
                         console.log('Status updated in row:', status);
                     }
+                    
+                    // Update row background color if task is now done
+                    if (status === 'done') {
+                        row.style.backgroundColor = '#e8f5e9';
+                        row.classList.add('task-completed');
+                    } else {
+                        row.style.backgroundColor = 'transparent';
+                        row.classList.remove('task-completed');
+                    }
                 } else if (td && progress !== undefined) {
                     // Progress update
                     const progressBar = td.querySelector('.progress-bar');
@@ -302,6 +357,15 @@ window.updateTaskAjax = function(form) {
                             progressText.textContent = progress + '%';
                         }
                         console.log('Progress updated in row:', progress + '%');
+                    }
+                    
+                    // Update row background color if task is now complete (100%)
+                    if (progress >= 100) {
+                        row.style.backgroundColor = '#e8f5e9';
+                        row.classList.add('task-completed');
+                    } else {
+                        row.style.backgroundColor = 'transparent';
+                        row.classList.remove('task-completed');
                     }
                 }
             });
@@ -469,6 +533,10 @@ function updateDailyTaskProgress(projectId, taskId, dayOrDate, action, value = n
                 
                 // If complete, disable buttons and update UI
                 if (data.is_complete) {
+                    // Update container background and border color
+                    container.style.background = '#e8f8e8';
+                    container.style.borderLeft = '4px solid #4caf50';
+                    
                     if (incrementBtn) {
                         incrementBtn.disabled = true;
                         incrementBtn.style.opacity = '0.5';
@@ -529,6 +597,35 @@ function updateTaskStatus(projectId, taskId, status, button, date = null) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
+            // Find the task container div
+            const taskContainer = button.closest('[data-task-id]');
+            if (!taskContainer) {
+                console.error('Task container not found');
+                return;
+            }
+            
+            // Update the status badge
+            const statusSpan = taskContainer.querySelector('span[style*="background"]');
+            if (statusSpan) {
+                const statusLabels = {
+                    'todo': '⏳ À faire',
+                    'in_progress': '🔄 En cours',
+                    'done': '✓ Terminé'
+                };
+                statusSpan.textContent = statusLabels[status] || status;
+                if (status === 'done') {
+                    statusSpan.style.background = '#4caf50';
+                } else {
+                    statusSpan.style.background = '#007bff';
+                }
+            }
+            
+            // Update the background color of the task container
+            if (status === 'done') {
+                taskContainer.style.background = '#e8f8e8';
+                taskContainer.style.borderLeft = '4px solid #4caf50';
+            }
+            
             // Update button state based on new status
             const parent = button.parentElement;
             
@@ -551,3 +648,202 @@ function updateTaskStatus(projectId, taskId, status, button, date = null) {
         alert('Erreur lors de la mise à jour du statut');
     });
 }
+
+/**
+ * Handle day selection for recurring tasks in dashboard
+ * Shows/hides the task content form based on selected day
+ * Loads the stored value for that day from daily_progress
+ * 
+ * If autoSelect is true, automatically selects the closest day (today or next occurrence)
+ */
+function selectTaskDay(button, projectId, taskId, taskMode, autoSelect = false) {
+    // Get parent container (the div with all day buttons and content)
+    const container = button.parentElement.parentElement;
+    
+    // Remove active state from all day buttons
+    container.querySelectorAll('.day-btn').forEach(btn => {
+        btn.style.background = '#f0f0f0';
+        btn.style.color = '#333';
+        btn.style.borderColor = '#ccc';
+    });
+    
+    // Add active state to clicked button
+    button.style.background = '#667eea';
+    button.style.color = 'white';
+    button.style.borderColor = '#667eea';
+    
+    // Show the task content div
+    const contentDiv = container.querySelector('.task-day-content');
+    if (contentDiv) {
+        contentDiv.style.display = 'block';
+        
+        // Get the selected day
+        const day = button.getAttribute('data-day');
+        
+        // Calculate the date for this day of week
+        const dayMap = {'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6};
+        const targetDayNum = dayMap[day];
+        const today = new Date();
+        const currentDay = today.getDay();
+        
+        // Days to add to reach the target day
+        let daysToAdd = (targetDayNum - currentDay + 7) % 7;
+        if (daysToAdd === 0) {
+            daysToAdd = 0; // Today is the target day
+        }
+        
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysToAdd);
+        
+        // Format as YYYY-MM-DD
+        const year = targetDate.getFullYear();
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const dateNum = String(targetDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${dateNum}`;
+        
+        // Update the hidden date input in the form(s)
+        contentDiv.querySelectorAll('input[name="date"]').forEach(input => {
+            input.value = dateStr;
+        });
+        
+        // Now fetch the current value for this date from daily_progress
+        fetch('get_task_daily_progress.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: `project_id=${projectId}&task_id=${taskId}&date=${dateStr}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update progress bar if in bar mode
+                const progressFill = contentDiv.querySelector('.progress-fill');
+                const progressText = contentDiv.querySelector('.progress-text');
+                const progressInput = contentDiv.querySelector('input[name="progress"]');
+                if (progressFill && progressText && progressInput) {
+                    const progress = data.progress || 0;
+                    progressFill.style.width = progress + '%';
+                    progressText.textContent = progress > 15 ? progress + '%' : '';
+                    progressInput.value = progress;
+                }
+                
+                // Update status select if in status mode
+                const statusSelect = contentDiv.querySelector('select[name="status"]');
+                if (statusSelect && data.status) {
+                    statusSelect.value = data.status;
+                }
+            }
+        })
+        .catch(error => {
+            console.warn('Could not load task progress:', error);
+            // Gracefully continue with default values
+        });
+    }
+}
+
+/**
+ * Auto-select the closest day for a recurring task in dashboard
+ * Finds today or the next occurrence and selects it
+ */
+function autoSelectClosestDay(container) {
+    const buttons = container.querySelectorAll('.day-btn');
+    if (buttons.length === 0) return;
+    
+    const dayMap = {'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6};
+    const today = new Date();
+    const currentDay = today.getDay();
+    
+    let closestButton = null;
+    let minDaysAhead = Infinity;
+    
+    // Find the button for today, or the closest future day
+    buttons.forEach(btn => {
+        const day = btn.getAttribute('data-day');
+        const targetDayNum = dayMap[day];
+        let daysToAdd = (targetDayNum - currentDay + 7) % 7;
+        
+        // Today gets priority (0 days ahead)
+        if (daysToAdd < minDaysAhead) {
+            minDaysAhead = daysToAdd;
+            closestButton = btn;
+        }
+    });
+    
+    // Auto-click the closest button
+    if (closestButton) {
+        const projectId = closestButton.getAttribute('data-project-id') || 
+                         closestButton.closest('[data-project-id]')?.getAttribute('data-project-id');
+        const taskId = closestButton.getAttribute('data-task-id') || 
+                      closestButton.closest('[data-task-id]')?.getAttribute('data-task-id');
+        const taskMode = closestButton.getAttribute('data-task-mode') || 
+                        closestButton.closest('[data-task-mode]')?.getAttribute('data-task-mode') || 'status';
+        
+        // Get the actual project_id and task_id from the form if available
+        const form = closestButton.closest('[class*="task-day"]')?.querySelector('form');
+        if (form) {
+            const projectIdInput = form.querySelector('input[name="project_id"]');
+            const taskIdInput = form.querySelector('input[name="task_id"]');
+            if (projectIdInput) selectTaskDay(closestButton, projectIdInput.value, taskIdInput?.value, taskMode);
+        } else {
+            selectTaskDay(closestButton, projectId, taskId, taskMode);
+        }
+    }
+}
+
+// Auto-select closest day when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.day-btn').forEach(btn => {
+        // Only auto-select if it's the first day-btn in its container group
+        const parentContainer = btn.parentElement;
+        if (parentContainer.querySelector('.day-btn') === btn) {
+            autoSelectClosestDay(parentContainer);
+        }
+    });
+
+    // Auto-fill date for forms in recurring tasks on dashboard tables
+    document.querySelectorAll('input[name="date"][value=""]').forEach(dateInput => {
+        // Check if this date input is in a row with day-buttons
+        const form = dateInput.closest('form');
+        if (!form) return;
+
+        const taskRow = form.closest('tr');
+        if (!taskRow) return;
+
+        const dayButtons = taskRow.querySelectorAll('.day-btn');
+        if (dayButtons.length === 0) return;
+
+        // This is a recurring task - calculate the closest day date
+        const dayMap = {'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6};
+        const today = new Date();
+        const currentDay = today.getDay();
+
+        let closestButton = null;
+        let minDaysAhead = Infinity;
+
+        dayButtons.forEach(btn => {
+            const dayAttr = btn.getAttribute('data-day');
+            const targetDayNum = dayMap[dayAttr];
+            const daysToAdd = (targetDayNum - currentDay + 7) % 7;
+
+            if (daysToAdd < minDaysAhead) {
+                minDaysAhead = daysToAdd;
+                closestButton = btn;
+            }
+        });
+
+        if (closestButton && minDaysAhead < Infinity) {
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + minDaysAhead);
+
+            const year = targetDate.getFullYear();
+            const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+            const dateNum = String(targetDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${dateNum}`;
+
+            dateInput.value = dateStr;
+            console.log(`Auto-filled date for task: ${dateStr}`);
+        }
+    });
+});

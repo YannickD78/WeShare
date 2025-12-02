@@ -127,6 +127,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
     // Chercher la tâche existante pour récupérer son statut et progression
     $status = 'todo';
     $progress = 0;
+    $daily_progress = [];
+    $daily_status = [];
     $existing_recurring = false;
     $existing_recurring_days = [];
     
@@ -134,6 +136,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         if ($old_task['id'] === $task_id) {
             $status = $old_task['status'] ?? 'todo';
             $progress = $old_task['progress'] ?? 0;
+            $daily_progress = $old_task['daily_progress'] ?? [];
+            $daily_status = $old_task['daily_status'] ?? [];
             $existing_recurring = $old_task['is_recurring'] ?? false;
             $existing_recurring_days = $old_task['recurring_days'] ?? [];
             break;
@@ -161,6 +165,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         'mode' => $mode,
         'is_recurring' => $is_recurring,
         'recurring_days' => $recurring_days,
+        'daily_progress' => $daily_progress,
+        'daily_status' => $daily_status,
     ];
 }
 

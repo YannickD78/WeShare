@@ -121,23 +121,22 @@ foreach ($tasksForDay as $item) {
     $task = $item['task'];
     $isBarMode = ($task['mode'] ?? 'status') === 'bar';
     
+    // For recurring tasks, use daily_progress; for non-recurring use global progress
     if ($isBarMode) {
-        $totalProgress += $task['progress'] ?? 0;
+        if ($task['is_recurring'] ?? false) {
+            $dailyProgress = get_daily_progress($task, $selectedDateStr);
+            $totalProgress += $dailyProgress;
+        } else {
+            $totalProgress += $task['progress'] ?? 0;
+        }
         $barTasksCount++;
     }
     
-    // For recurring tasks, check daily_progress for this specific date
-    // For non-recurring tasks, check the global status/progress
-    if (($task['is_recurring'] ?? false)) {
-        $dailyProgress = get_daily_progress($task, $selectedDateStr);
-        if ($dailyProgress >= 100) {
-            $doneTasks++;
-        }
-    } else {
-        // Non-recurring task: check global status or progress
-        if ($task['status'] === 'done' || ($isBarMode && ($task['progress'] ?? 0) >= 100)) {
-            $doneTasks++;
-        }
+    // Check if task is complete for this specific date
+    // Using is_task_complete with date for recurring tasks
+    $dateForCheck = ($task['is_recurring'] ?? false) ? $selectedDateStr : null;
+    if (is_task_complete($task, $dateForCheck)) {
+        $doneTasks++;
     }
 }
 
@@ -233,7 +232,8 @@ $avgProgress = $barTasksCount > 0 ? round($totalProgress / $barTasksCount) : 0;
                     $task = $item['task'];
                     $project = $item['project'];
                     $isBarMode = ($task['mode'] ?? 'status') === 'bar';
-                    $isComplete = is_task_complete($task, ($task['is_recurring'] ?? false) ? $selectedDate->format('Y-m-d') : null);
+                    $dateForCheck = ($task['is_recurring'] ?? false) ? $selectedDate->format('Y-m-d') : null;
+                    $isComplete = is_task_complete($task, $dateForCheck);
                     $statusColors = [
                         'todo' => '#e8f4f8',
                         'in_progress' => '#fff4e8',
@@ -241,7 +241,7 @@ $avgProgress = $barTasksCount > 0 ? round($totalProgress / $barTasksCount) : 0;
                     ];
                     $statusBgColor = $statusColors[$task['status'] ?? 'todo'] ?? '#f9f9f9';
                 ?>
-                    <div style="background: <?= $statusBgColor ?>; border-left: 4px solid #007bff; padding: 15px; border-radius: 6px;" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-date="<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>">
+                    <div style="background: <?= $isComplete ? '#e8f8e8' : $statusBgColor ?>; border-left: 4px solid <?= $isComplete ? '#4caf50' : '#007bff' ?>; padding: 15px; border-radius: 6px;" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-date="<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                             <div>
                                 <h4 style="margin: 0 0 5px 0; font-size: 1.1em;"><?= htmlspecialchars($task['title']) ?></h4>
@@ -249,8 +249,11 @@ $avgProgress = $barTasksCount > 0 ? round($totalProgress / $barTasksCount) : 0;
                                     Projet: <strong><?= htmlspecialchars($project['name']) ?></strong>
                                 </small>
                             </div>
-                            <span style="background: #007bff; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85em; white-space: nowrap;">
-                                <?= htmlspecialchars(status_label($task['status'])) ?>
+                            <span style="background: <?= $isComplete ? '#4caf50' : '#007bff' ?>; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85em; white-space: nowrap;">
+                                <?php 
+                                    $dailyStatus = ($task['is_recurring'] ?? false) ? get_daily_status($task, $selectedDate->format('Y-m-d')) : $task['status'];
+                                    echo htmlspecialchars(status_label($dailyStatus));
+                                ?>
                             </span>
                         </div>
 
@@ -329,7 +332,8 @@ $avgProgress = $barTasksCount > 0 ? round($totalProgress / $barTasksCount) : 0;
                         if ($task['is_recurring'] ?? false) {
                             if (in_array($recurringDay, $task['recurring_days'] ?? [])) {
                                 $tasksCount++;
-                                if (is_task_complete($task)) {
+                                // For recurring tasks, pass the date to check specific day completion
+                                if (is_task_complete($task, $dateStr)) {
                                     $doneCount++;
                                 }
                             }

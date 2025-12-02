@@ -22,6 +22,8 @@ $page_title = $page_title ?? 'WeShare';
             <nav class="main-nav">
                 <?php if ($user): ?>
                     <a href="dashboard.php">Mes projets</a>
+                    <a href="weekly_view.php">📅 Vue semaine</a>
+                    <a href="stats_view.php">📊 Statistiques</a>
                     <a href="create_project.php">Créer un projet</a>
                     <span class="user-label">Bonjour, <?= htmlspecialchars($user['name']) ?></span>
                     <a href="logout.php" class="btn-logout">Déconnexion</a>

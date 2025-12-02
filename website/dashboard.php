@@ -52,14 +52,165 @@ usort($member_projects, function ($a, $b) {
     </div>
 </section>
 
+<!-- Recent Tasks Section -->
 <section class="project-section">
-    <h2>Projets que j’ai créés</h2>
+    <h2>📋 Mes tâches récentes</h2>
+    <?php
+    // Collect all tasks from all projects (created + member)
+    $all_my_tasks = [];
+    foreach (array_merge($created_projects, $member_projects) as $project) {
+        foreach ($project['tasks'] as $task) {
+            if (strtolower($task['assigned_to']) === $email) {
+                $all_my_tasks[] = [
+                    'task' => $task,
+                    'project' => $project,
+                ];
+            }
+        }
+    }
+    
+    // Sort by creation order (most recent first) - we'll show the 10 most recent
+    $recent_tasks = array_slice($all_my_tasks, 0, 10);
+    ?>
+    
+    <?php if (!$recent_tasks): ?>
+        <p>Aucune tâche ne vous est assignée pour le moment.</p>
+    <?php else: ?>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+        <?php foreach ($recent_tasks as $item): 
+            $task = $item['task'];
+            $project = $item['project'];
+            $isBarMode = ($task['mode'] ?? 'status') === 'bar';
+            $isRecurring = $task['is_recurring'] ?? false;
+            
+            // For recurring tasks, determine the relevant date (today or next occurrence)
+            $relevantDate = null;
+            if ($isRecurring) {
+                $dayMap = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
+                $today = new DateTime();
+                $currentDayNum = $today->format('w'); // 0=Sun, 1=Mon, etc.
+                
+                // Find the next occurrence of this task
+                $minDaysAhead = 7;
+                $nextOccurrence = null;
+                foreach ($task['recurring_days'] ?? [] as $day) {
+                    $targetDayNum = $dayMap[$day] ?? null;
+                    if ($targetDayNum === null) continue;
+                    $daysAhead = ($targetDayNum - $currentDayNum + 7) % 7;
+                    if ($daysAhead < $minDaysAhead) {
+                        $minDaysAhead = $daysAhead;
+                        $nextOccurrence = $daysAhead;
+                    }
+                }
+                
+                if ($nextOccurrence !== null) {
+                    $relevantDate = new DateTime();
+                    $relevantDate->modify("+{$nextOccurrence} days");
+                    $relevantDate = $relevantDate->format('Y-m-d');
+                }
+            }
+            
+            // Determine completion status using is_task_complete function
+            $isCompleted = is_task_complete($task, $relevantDate);
+            
+            // Get display values (daily values for recurring tasks, global for non-recurring)
+            if ($isRecurring && $relevantDate) {
+                if ($isBarMode) {
+                    $displayProgress = get_daily_progress($task, $relevantDate);
+                    $displayStatus = null;
+                } else {
+                    $displayStatus = get_daily_status($task, $relevantDate);
+                    $displayProgress = null;
+                }
+            } else {
+                $displayProgress = $task['progress'] ?? 0;
+                $displayStatus = $task['status'] ?? 'todo';
+            }
+            
+            $bgColor = $isCompleted ? '#e8f5e9' : '#f5f5f5';
+            $borderColor = $isCompleted ? '#4caf50' : '#ddd';
+            $statusIcon = $isCompleted ? '✓' : '→';
+            $statusColor = $isCompleted ? '#4caf50' : '#ff9800';
+        ?>
+            <div style="background: <?= $bgColor ?>; border: 2px solid <?= $borderColor ?>; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; gap: 10px;">
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0; color: #333;"><?= htmlspecialchars($task['title']) ?></h4>
+                        <small style="color: #666; font-size: 0.85em;">📁 <?= htmlspecialchars($project['name']) ?></small>
+                        <?php if ($isRecurring): ?>
+                            <br><small style="color: #666; font-size: 0.85em;">📅 <?= htmlspecialchars(format_recurring_days($task['recurring_days'] ?? [])) ?></small>
+                            <?php if ($relevantDate): ?>
+                                <br><small style="color: #0066cc; font-size: 0.85em; font-weight: bold;">📆 <?= htmlspecialchars(date('d/m/Y', strtotime($relevantDate))) ?></small>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                    <span style="font-size: 1.5em; color: <?= $statusColor ?>;"><?= $statusIcon ?></span>
+                </div>
+                
+                <?php if ($isBarMode): ?>
+                    <div style="background: #ddd; height: 20px; border-radius: 10px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: <?= $displayProgress ?>%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75em; font-weight: bold;">
+                            <?php if ($displayProgress > 10): ?><?= $displayProgress ?>%<?php endif; ?>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <div style="padding: 8px 12px; background: #fff; border: 1px solid #ddd; border-radius: 4px; text-align: center; font-weight: 500; color: #333;">
+                        <?php 
+                        $statusLabels = ['todo' => '⏳ À faire', 'in_progress' => '🔄 En cours', 'done' => '✓ Terminé'];
+                        echo $statusLabels[$displayStatus] ?? 'À faire';
+                        ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</section>
+
+<section class="project-section">
+    <h2>Projets que j'ai créés</h2>
     <?php if (!$created_projects): ?>
         <p>Vous n’avez pas encore créé de projet.</p>
     <?php else: ?>
         <?php foreach ($created_projects as $project): ?>
             <article class="project-card">
-                <h3><?= htmlspecialchars($project['name']) ?></h3>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; gap: 10px;">
+                    <h3 style="margin: 0; flex: 1;"><?= htmlspecialchars($project['name']) ?></h3>
+                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                        <?php if (($project['status'] ?? 'active') !== 'done'): ?>
+                            <a href="modify_project.php?id=<?= htmlspecialchars($project['id']) ?>" 
+                               class="btn-secondary" 
+                               style="display: inline-block; padding: 6px 12px; font-size: 0.85em;">
+                                ✏️ Modifier
+                            </a>
+                            <form method="post" action="cloturer_project.php" style="margin:0; display: inline;">
+                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                <button type="submit" class="btn-secondary"
+                                    onclick="return confirm('Êtes-vous sûr de vouloir clôturer ce projet ?')"
+                                    style="display:inline-block; padding: 6px 12px; font-size: 0.85em;">
+                                    ✓ Clôturer
+                                </button>
+                            </form>
+                        <?php else: ?>
+                            <span style="color: green; font-weight: bold; padding: 6px 12px; font-size: 0.85em;">✓ Terminé</span>
+                            <form method="post" action="reactiver_project.php" style="margin:0; display: inline;">
+                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                <button type="submit" class="btn-secondary"
+                                    style="display:inline-block; background-color: #1e90ff; color: white; padding: 6px 12px; font-size: 0.85em;">
+                                    🔄 Réactiver
+                                </button>
+                            </form>
+                            <form method="post" action="delete_project.php" style="margin:0; display: inline;">
+                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                <button type="submit" class="btn-secondary"
+                                    onclick="return confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')"
+                                    style="display:inline-block; background-color: #e74c3c; color: white; padding: 6px 12px; font-size: 0.85em;">
+                                    🗑️ Supprimer
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
                 <?php if (!empty($project['description'])): ?>
                     <p class="project-desc"><?= nl2br(htmlspecialchars($project['description'])) ?></p>
                 <?php endif; ?>
@@ -130,45 +281,112 @@ usort($member_projects, function ($a, $b) {
                                     <?php foreach ($project['tasks'] as $task): ?>
                                         <?php $is_my_task = (strtolower($task['assigned_to']) === $email); ?>
                                         <?php if (strtolower($task['assigned_to']) === $email): ?>
-                                            <tr class="my-task" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>">
+                                            <?php
+                                            // For recurring tasks, get the relevant date and display values
+                                            $relevantDate = null;
+                                            $displayStatus = $task['status'] ?? 'todo';
+                                            $displayProgress = $task['progress'] ?? 0;
+                                            $taskIsCompleted = is_task_complete($task);
+                                            
+                                            if ($task['is_recurring'] ?? false) {
+                                                $relevantDate = get_relevant_date_for_recurring_task($task);
+                                                if ($relevantDate) {
+                                                    $taskIsCompleted = is_task_complete($task, $relevantDate);
+                                                    if (($task['mode'] ?? 'status') === 'bar') {
+                                                        $displayProgress = get_daily_progress($task, $relevantDate);
+                                                    } else {
+                                                        $displayStatus = get_daily_status($task, $relevantDate);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            $bgColor = $taskIsCompleted ? '#e8f5e9' : 'transparent';
+                                            ?>
+                                            <tr class="my-task <?= $taskIsCompleted ? 'task-completed' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>" style="background-color: <?= $bgColor ?>;">
                                                 <td>
                                                     <?= htmlspecialchars($task['title']) ?>
                                                     <?php if ($task['is_recurring'] ?? false): ?>
                                                         <br><small style="color: #666; font-size: 0.85em;">📅 <?= htmlspecialchars(format_recurring_days($task['recurring_days'] ?? [])) ?></small>
+                                                        <?php if ($relevantDate): ?>
+                                                            <br><small style="color: #0066cc; font-size: 0.85em; font-weight: bold;">📆 <?= htmlspecialchars(date('d/m', strtotime($relevantDate))) ?></small>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
                                                 <td>
-                                                    <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
-                                                        <div class="progress-bar">
-                                                            <div class="progress-fill" style="width: <?= get_overall_progress($task) ?>%"></div>
-                                                            <span class="progress-text"><?= get_overall_progress($task) ?>%</span>
+                                                    <?php if ($task['is_recurring'] ?? false): ?>
+                                                        <!-- Recurring task: show day selector -->
+                                                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                                                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                                                <?php 
+                                                                $dayNames = ['mon' => 'Lun', 'tue' => 'Mar', 'wed' => 'Mer', 'thu' => 'Jeu', 'fri' => 'Ven', 'sat' => 'Sam', 'sun' => 'Dim'];
+                                                                foreach ($task['recurring_days'] ?? [] as $day):
+                                                                    ?>
+                                                                    <button class="day-btn" data-day="<?= htmlspecialchars($day) ?>" onclick="selectTaskDay(this, '<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>', '<?= htmlspecialchars($task['mode'] ?? 'status') ?>')" style="padding: 6px 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: bold;">
+                                                                        <?= $dayNames[$day] ?>
+                                                                    </button>
+                                                                <?php endforeach; ?>
+                                                            </div>
+                                                            <div class="task-day-content" style="display: none;">
+                                                                <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                                    <div class="progress-bar">
+                                                                        <div class="progress-fill" style="width: 0%"></div>
+                                                                        <span class="progress-text">0%</span>
+                                                                    </div>
+                                                                    <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                        <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                        <input type="hidden" name="date" value="">
+                                                                        <input type="range" name="progress" min="0" max="100" value="0" 
+                                                                               class="progress-slider" onchange="<?= $is_done ? 'return false;' : 'return updateTaskAjax(this.form)' ?>" style="width: 100%; cursor: <?= $is_done ? 'default' : 'pointer' ?>;" <?= $is_done ? 'disabled' : '' ?>>
+                                                                    </form>
+                                                                <?php else: ?>
+                                                                    <form method="post" action="update_task.php">
+                                                                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                        <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                        <input type="hidden" name="date" value="">
+                                                                        <select name="status" onchange="<?= $is_done ? 'return false;' : 'return updateTaskAjax(this.form)' ?>" <?= $is_done ? 'disabled' : '' ?>>
+                                                                            <option value="todo">À faire</option>
+                                                                            <option value="in_progress">En cours</option>
+                                                                            <option value="done">Terminé</option>
+                                                                        </select>
+                                                                    </form>
+                                                                <?php endif; ?>
+                                                            </div>
                                                         </div>
-                                                        <?php if (!$is_done): ?>
-                                                            <form method="post" action="update_task.php" style="margin-top: 8px;">
-                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                                <input type="range" name="progress" min="0" max="100" value="<?= get_overall_progress($task) ?>" 
-                                                                       class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
-                                                            </form>
-                                                        <?php else: ?>
-                                                            <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
-                                                        <?php endif; ?>
                                                     <?php else: ?>
-                                                        <?php if ($is_my_task && !$is_done): ?>
-                                                            <form method="post" action="update_task.php">
-                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                                <select name="status" onchange="return updateTaskAjax(this.form)">
-                                                                    <option value="todo" <?= $task['status'] === 'todo' ? 'selected' : '' ?>>À faire</option>
-                                                                    <option value="in_progress" <?= $task['status'] === 'in_progress' ? 'selected' : '' ?>>En cours</option>
-                                                                    <option value="done" <?= $task['status'] === 'done' ? 'selected' : '' ?>>Terminé</option>
-                                                                </select>
-                                                            </form>
+                                                        <!-- Non-recurring task -->
+                                                        <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                            <div class="progress-bar">
+                                                                <div class="progress-fill" style="width: <?= $displayProgress ?>%"></div>
+                                                                <span class="progress-text"><?= $displayProgress ?>%</span>
+                                                            </div>
+                                                            <?php if (!$is_done): ?>
+                                                                <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                                    <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                    <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                    <input type="range" name="progress" min="0" max="100" value="<?= $displayProgress ?>" 
+                                                                           class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
+                                                                </form>
+                                                            <?php else: ?>
+                                                                <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
+                                                            <?php endif; ?>
                                                         <?php else: ?>
-                                                            <?= htmlspecialchars(status_label($task['status'])) ?>
-                                                            <?php if (is_task_complete($task)): ?>
-                                                                <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-left: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️</button>
+                                                            <?php if ($is_my_task && !$is_done): ?>
+                                                                <form method="post" action="update_task.php">
+                                                                    <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                    <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                    <select name="status" onchange="return updateTaskAjax(this.form)">
+                                                                        <option value="todo" <?= $displayStatus === 'todo' ? 'selected' : '' ?>>À faire</option>
+                                                                        <option value="in_progress" <?= $displayStatus === 'in_progress' ? 'selected' : '' ?>>En cours</option>
+                                                                        <option value="done" <?= $displayStatus === 'done' ? 'selected' : '' ?>>Terminé</option>
+                                                                    </select>
+                                                                </form>
+                                                            <?php else: ?>
+                                                                <?= htmlspecialchars(status_label($displayStatus)) ?>
+                                                                <?php if ($taskIsCompleted): ?>
+                                                                    <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-left: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️</button>
+                                                                <?php endif; ?>
                                                             <?php endif; ?>
                                                         <?php endif; ?>
                                                     <?php endif; ?>
@@ -192,46 +410,114 @@ usort($member_projects, function ($a, $b) {
                             </thead>
                             <tbody>
                                 <?php foreach ($project['tasks'] as $task): ?>
-                                    <?php $is_my_task = (strtolower($task['assigned_to']) === $email); ?>
-                                    <tr class="<?= $is_my_task ? 'my-task' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>">
+                                    <?php 
+                                    $is_my_task = (strtolower($task['assigned_to']) === $email);
+                                    
+                                    // For recurring tasks, get the relevant date and display values
+                                    $relevantDate = null;
+                                    $displayStatus = $task['status'] ?? 'todo';
+                                    $displayProgress = $task['progress'] ?? 0;
+                                    $taskIsCompleted = is_task_complete($task);
+                                    
+                                    if ($task['is_recurring'] ?? false) {
+                                        $relevantDate = get_relevant_date_for_recurring_task($task);
+                                        if ($relevantDate) {
+                                            $taskIsCompleted = is_task_complete($task, $relevantDate);
+                                            if (($task['mode'] ?? 'status') === 'bar') {
+                                                $displayProgress = get_daily_progress($task, $relevantDate);
+                                            } else {
+                                                $displayStatus = get_daily_status($task, $relevantDate);
+                                            }
+                                        }
+                                    }
+                                    
+                                    $bgColor = $taskIsCompleted ? '#e8f5e9' : 'transparent';
+                                    ?>
+                                    <tr class="<?= $is_my_task ? 'my-task' : '' ?> <?= $taskIsCompleted ? 'task-completed' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>" style="background-color: <?= $bgColor ?>;">
                                         <td>
                                             <?= htmlspecialchars($task['title']) ?>
                                             <?php if ($task['is_recurring'] ?? false): ?>
                                                 <br><small style="color: #666; font-size: 0.85em;">📅 <?= htmlspecialchars(format_recurring_days($task['recurring_days'] ?? [])) ?></small>
+                                                <?php if ($relevantDate): ?>
+                                                    <br><small style="color: #0066cc; font-size: 0.85em; font-weight: bold;">📆 <?= htmlspecialchars(date('d/m', strtotime($relevantDate))) ?></small>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                         <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
                                         <td>
-                                            <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
-                                                <div class="progress-bar">
-                                                    <div class="progress-fill" style="width: <?= $task['progress'] ?? 0 ?>%"></div>
-                                                    <span class="progress-text"><?= $task['progress'] ?? 0 ?>%</span>
+                                            <?php if ($task['is_recurring'] ?? false): ?>
+                                                <!-- Recurring task: show day selector -->
+                                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                                        <?php 
+                                                        $dayNames = ['mon' => 'Lun', 'tue' => 'Mar', 'wed' => 'Mer', 'thu' => 'Jeu', 'fri' => 'Ven', 'sat' => 'Sam', 'sun' => 'Dim'];
+                                                        foreach ($task['recurring_days'] ?? [] as $day):
+                                                            ?>
+                                                            <button class="day-btn" data-day="<?= htmlspecialchars($day) ?>" onclick="selectTaskDay(this, '<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>', '<?= htmlspecialchars($task['mode'] ?? 'status') ?>')" style="padding: 6px 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: bold;">
+                                                                <?= $dayNames[$day] ?>
+                                                            </button>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div class="task-day-content" style="display: none;">
+                                                        <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                            <div class="progress-bar">
+                                                                <div class="progress-fill" style="width: 0%"></div>
+                                                                <span class="progress-text">0%</span>
+                                                            </div>
+                                                            <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                <input type="hidden" name="date" value="">
+                                                                <input type="range" name="progress" min="0" max="100" value="0" 
+                                                                       class="progress-slider" onchange="<?= $is_my_task && !$is_done ? 'return updateTaskAjax(this.form)' : 'return false;' ?>" style="width: 100%; cursor: <?= $is_my_task && !$is_done ? 'pointer' : 'default' ?>;" <?= (!$is_my_task || $is_done) ? 'disabled' : '' ?>>
+                                                            </form>
+                                                        <?php else: ?>
+                                                            <form method="post" action="update_task.php">
+                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                <input type="hidden" name="date" value="">
+                                                                <select name="status" onchange="<?= $is_my_task && !$is_done ? 'return updateTaskAjax(this.form)' : 'return false;' ?>" <?= (!$is_my_task || $is_done) ? 'disabled' : '' ?>>
+                                                                    <option value="todo">À faire</option>
+                                                                    <option value="in_progress">En cours</option>
+                                                                    <option value="done">Terminé</option>
+                                                                </select>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    </div>
                                                 </div>
-                                                <?php if ($is_my_task && !$is_done): ?>
-                                                    <form method="post" action="update_task.php" style="margin-top: 8px;">
-                                                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                        <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                        <input type="range" name="progress" min="0" max="100" value="<?= $task['progress'] ?? 0 ?>" 
-                                                               class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
-                                                    </form>
-                                                <?php elseif ($is_my_task && is_task_complete($task)): ?>
-                                                    <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
-                                                <?php endif; ?>
                                             <?php else: ?>
-                                                <?php if ($is_my_task && !$is_done): ?>
-                                                    <form method="post" action="update_task.php">
-                                                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                        <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                        <select name="status" onchange="return updateTaskAjax(this.form)">
-                                                            <option value="todo" <?= $task['status'] === 'todo' ? 'selected' : '' ?>>À faire</option>
-                                                            <option value="in_progress" <?= $task['status'] === 'in_progress' ? 'selected' : '' ?>>En cours</option>
-                                                            <option value="done" <?= $task['status'] === 'done' ? 'selected' : '' ?>>Terminé</option>
-                                                        </select>
-                                                    </form>
+                                                <!-- Non-recurring task -->
+                                                <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                    <div class="progress-bar">
+                                                        <div class="progress-fill" style="width: <?= $displayProgress ?>%"></div>
+                                                        <span class="progress-text"><?= $displayProgress ?>%</span>
+                                                    </div>
+                                                    <?php if ($is_my_task && !$is_done): ?>
+                                                        <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                            <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                            <input type="range" name="progress" min="0" max="100" value="<?= $displayProgress ?>" 
+                                                                   class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
+                                                        </form>
+                                                    <?php elseif ($is_my_task && $taskIsCompleted): ?>
+                                                        <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
+                                                    <?php endif; ?>
                                                 <?php else: ?>
-                                                    <?= htmlspecialchars(status_label($task['status'])) ?>
-                                                    <?php if (is_task_complete($task)): ?>
-                                                        <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-left: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️</button>
+                                                    <?php if ($is_my_task && !$is_done): ?>
+                                                        <form method="post" action="update_task.php">
+                                                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                            <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                            <select name="status" onchange="return updateTaskAjax(this.form)">
+                                                                <option value="todo" <?= $displayStatus === 'todo' ? 'selected' : '' ?>>À faire</option>
+                                                                <option value="in_progress" <?= $displayStatus === 'in_progress' ? 'selected' : '' ?>>En cours</option>
+                                                                <option value="done" <?= $displayStatus === 'done' ? 'selected' : '' ?>>Terminé</option>
+                                                            </select>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <?= htmlspecialchars(status_label($displayStatus)) ?>
+                                                        <?php if ($taskIsCompleted): ?>
+                                                            <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-left: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️</button>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 <?php endif; ?>
                                             <?php endif; ?>
@@ -243,36 +529,6 @@ usort($member_projects, function ($a, $b) {
                     </div>
                 <?php endif; ?>
             </article>
-                           <?php if (($project['status'] ?? 'active') !== 'done'): ?>
-                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
-                        <a href="modify_project.php?id=<?= htmlspecialchars($project['id']) ?>" 
-                           class="btn-secondary" 
-                           style="display:inline-block;">
-                            Modifier le projet
-                        </a>
-
-                        <form method="post" action="cloturer_project.php" style="margin:0;">
-                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                            <button type="submit" class="btn-secondary"
-                                onclick="return confirm('Êtes-vous sûr de vouloir clôturer ce projet ?')"
-                                style="display:inline-block;">
-                                Clôturer le projet
-                            </button>
-                        </form>
-                    </div>
-                <?php else: ?>
-                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
-                        <span style="color: green; font-weight: bold;">(Terminé)</span>
-                        <form method="post" action="delete_project.php" style="margin:0;">
-                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                            <button type="submit" class="btn-secondary"
-                                onclick="return confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')"
-                                style="display:inline-block; background-color: #e74c3c; color: white;">
-                                🗑️ Supprimer le projet
-                            </button>
-                        </form>
-                    </div>
-                <?php endif; ?>
         <?php endforeach; ?>
     <?php endif; ?>
 </section>
@@ -284,8 +540,29 @@ usort($member_projects, function ($a, $b) {
     <?php else: ?>
         <?php foreach ($member_projects as $project): ?>
             <article class="project-card">
-                
-                <h3><?= htmlspecialchars($project['name']) ?></h3>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; gap: 10px;">
+                    <h3 style="margin: 0; flex: 1;"><?= htmlspecialchars($project['name']) ?></h3>
+                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                        <?php if (($project['status'] ?? 'active') !== 'done'): ?>
+                            <a href="modify_project.php?id=<?= htmlspecialchars($project['id']) ?>" 
+                               class="btn-secondary" 
+                               style="display: inline-block; padding: 6px 12px; font-size: 0.85em;">
+                                ✏️ Modifier
+                            </a>
+                        <?php else: ?>
+                            <span style="color: green; font-weight: bold; padding: 6px 12px; font-size: 0.85em;">✓ Terminé</span>
+                            <?php if (strtolower($project['creator_email']) === $email): ?>
+                                <form method="post" action="reactiver_project.php" style="margin:0; display: inline;">
+                                    <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                    <button type="submit" class="btn-secondary"
+                                        style="display:inline-block; background-color: #1e90ff; color: white; padding: 6px 12px; font-size: 0.85em;">
+                                        🔄 Réactiver
+                                    </button>
+                                </form>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
                 <?php if (!empty($project['description'])): ?>
                     <p class="project-desc"><?= nl2br(htmlspecialchars($project['description'])) ?></p>
                 <?php endif; ?>
@@ -332,44 +609,107 @@ usort($member_projects, function ($a, $b) {
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($my_tasks as $task): ?>
-                                    <tr class="my-task" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>">
+                                <?php foreach ($my_tasks as $task): 
+                                    // For recurring tasks, get the relevant date and display values
+                                    $relevantDate = null;
+                                    $displayStatus = $task['status'] ?? 'todo';
+                                    $displayProgress = $task['progress'] ?? 0;
+                                    $taskIsCompleted = is_task_complete($task);
+                                    
+                                    if ($task['is_recurring'] ?? false) {
+                                        $relevantDate = get_relevant_date_for_recurring_task($task);
+                                        if ($relevantDate) {
+                                            $taskIsCompleted = is_task_complete($task, $relevantDate);
+                                            if (($task['mode'] ?? 'status') === 'bar') {
+                                                $displayProgress = get_daily_progress($task, $relevantDate);
+                                            } else {
+                                                $displayStatus = get_daily_status($task, $relevantDate);
+                                            }
+                                        }
+                                    }
+                                    
+                                    $bgColor = $taskIsCompleted ? '#e8f5e9' : 'transparent';
+                                ?>
+                                    <tr class="my-task <?= $taskIsCompleted ? 'task-completed' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>" style="background-color: <?= $bgColor ?>;">
                                         <td>
                                             <?= htmlspecialchars($task['title']) ?>
                                             <?php if ($task['is_recurring'] ?? false): ?>
                                                 <br><small style="color: #666; font-size: 0.85em;">📅 <?= htmlspecialchars(format_recurring_days($task['recurring_days'] ?? [])) ?></small>
+                                                <?php if ($relevantDate): ?>
+                                                    <br><small style="color: #0066cc; font-size: 0.85em; font-weight: bold;">📆 <?= htmlspecialchars(date('d/m', strtotime($relevantDate))) ?></small>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                         <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
                                         <td>
-                                            <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
-                                                <div class="progress-bar">
-                                                    <div class="progress-fill" style="width: <?= $task['progress'] ?? 0 ?>%"></div>
-                                                    <span class="progress-text"><?= $task['progress'] ?? 0 ?>%</span>
+                                            <?php if ($task['is_recurring'] ?? false): ?>
+                                                <!-- Recurring task: show day selector -->
+                                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                                        <?php 
+                                                        $dayNames = ['mon' => 'Lun', 'tue' => 'Mar', 'wed' => 'Mer', 'thu' => 'Jeu', 'fri' => 'Ven', 'sat' => 'Sam', 'sun' => 'Dim'];
+                                                        foreach ($task['recurring_days'] ?? [] as $day):
+                                                            ?>
+                                                            <button class="day-btn" data-day="<?= htmlspecialchars($day) ?>" onclick="selectTaskDay(this, '<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>', '<?= htmlspecialchars($task['mode'] ?? 'status') ?>')" style="padding: 6px 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: bold;">
+                                                                <?= $dayNames[$day] ?>
+                                                            </button>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div class="task-day-content" style="display: none;">
+                                                        <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                            <div class="progress-bar">
+                                                                <div class="progress-fill" style="width: 0%"></div>
+                                                                <span class="progress-text">0%</span>
+                                                            </div>
+                                                            <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                <input type="hidden" name="date" value="">
+                                                                <input type="range" name="progress" min="0" max="100" value="0" 
+                                                                       class="progress-slider" onchange="<?= !$is_done ? 'return updateTaskAjax(this.form)' : 'return false;' ?>" style="width: 100%; cursor: <?= !$is_done ? 'pointer' : 'default' ?>;" <?= $is_done ? 'disabled' : '' ?>>
+                                                            </form>
+                                                        <?php else: ?>
+                                                            <form method="post" action="update_task.php">
+                                                                <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                                <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                                <input type="hidden" name="date" value="">
+                                                                <select name="status" onchange="<?= !$is_done ? 'return updateTaskAjax(this.form)' : 'return false;' ?>" <?= $is_done ? 'disabled' : '' ?>>
+                                                                    <option value="todo">À faire</option>
+                                                                    <option value="in_progress">En cours</option>
+                                                                    <option value="done">Terminé</option>
+                                                                </select>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    </div>
                                                 </div>
-                                                <?php if (!$is_done): ?>
-                                                    <form method="post" action="update_task.php" style="margin-top: 8px;">
-                                                        <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                        <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                        <input type="range" name="progress" min="0" max="100" value="<?= $task['progress'] ?? 0 ?>" 
-                                                               class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
-                                                    </form>
-                                                <?php else: ?>
-                                                    <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
-                                                <?php endif; ?>
                                             <?php else: ?>
-                                                <form method="post" action="update_task.php">
-                                                    <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
-                                                    <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                    <select name="status" onchange="return updateTaskAjax(this.form)">
-                                                        <option value="todo" <?= $task['status'] === 'todo' ? 'selected' : '' ?>>À faire
-                                                        </option>
-                                                        <option value="in_progress" <?= $task['status'] === 'in_progress' ? 'selected' : '' ?>>
-                                                            En cours</option>
-                                                        <option value="done" <?= $task['status'] === 'done' ? 'selected' : '' ?>>Terminé
-                                                        </option>
-                                                    </select>
-                                                </form>
+                                                <!-- Non-recurring task -->
+                                                <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
+                                                    <div class="progress-bar">
+                                                        <div class="progress-fill" style="width: <?= $displayProgress ?>%"></div>
+                                                        <span class="progress-text"><?= $displayProgress ?>%</span>
+                                                    </div>
+                                                    <?php if (!$is_done): ?>
+                                                        <form method="post" action="update_task.php" style="margin-top: 8px;">
+                                                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                            <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                            <input type="range" name="progress" min="0" max="100" value="<?= $displayProgress ?>" 
+                                                                   class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
+                                                        </form>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?php if (!$is_done): ?>
+                                                        <form method="post" action="update_task.php">
+                                                            <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
+                                                            <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
+                                                            <select name="status" onchange="return updateTaskAjax(this.form)">
+                                                                <option value="todo" <?= $displayStatus === 'todo' ? 'selected' : '' ?>>À faire</option>
+                                                                <option value="in_progress" <?= $displayStatus === 'in_progress' ? 'selected' : '' ?>>En cours</option>
+                                                                <option value="done" <?= $displayStatus === 'done' ? 'selected' : '' ?>>Terminé</option>
+                                                            </select>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -389,49 +729,70 @@ usort($member_projects, function ($a, $b) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($project['tasks'] as $task): ?>
-                                <?php $is_my_task = (strtolower($task['assigned_to']) === $email); ?>
-                                <tr class="<?= $is_my_task ? 'my-task' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>">
+                            <?php foreach ($project['tasks'] as $task): 
+                                $is_my_task = (strtolower($task['assigned_to']) === $email);
+                                
+                                // For recurring tasks, get the relevant date and display values
+                                $relevantDate = null;
+                                $displayStatus = $task['status'] ?? 'todo';
+                                $displayProgress = $task['progress'] ?? 0;
+                                $taskIsCompleted = is_task_complete($task);
+                                
+                                if ($task['is_recurring'] ?? false) {
+                                    $relevantDate = get_relevant_date_for_recurring_task($task);
+                                    if ($relevantDate) {
+                                        $taskIsCompleted = is_task_complete($task, $relevantDate);
+                                        if (($task['mode'] ?? 'status') === 'bar') {
+                                            $displayProgress = get_daily_progress($task, $relevantDate);
+                                        } else {
+                                            $displayStatus = get_daily_status($task, $relevantDate);
+                                        }
+                                    }
+                                }
+                                
+                                $bgColor = $taskIsCompleted ? '#e8f5e9' : 'transparent';
+                            ?>
+                                <tr class="<?= $is_my_task ? 'my-task' : '' ?> <?= $taskIsCompleted ? 'task-completed' : '' ?>" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-project-id="<?= htmlspecialchars($project['id']) ?>" data-task-mode="<?= htmlspecialchars($task['mode'] ?? 'status') ?>" style="background-color: <?= $bgColor ?>;">
                                     <td>
                                         <?= htmlspecialchars($task['title']) ?>
                                         <?php if ($task['is_recurring'] ?? false): ?>
                                             <br><small style="color: #666; font-size: 0.85em;">📅 <?= htmlspecialchars(format_recurring_days($task['recurring_days'] ?? [])) ?></small>
+                                            <?php if ($relevantDate): ?>
+                                                <br><small style="color: #0066cc; font-size: 0.85em; font-weight: bold;">📆 <?= htmlspecialchars(date('d/m', strtotime($relevantDate))) ?></small>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </td>
                                     <td><?= htmlspecialchars($task['assigned_to'] ?: 'Non assigné') ?></td>
                                     <td>
                                         <?php if (($task['mode'] ?? 'status') === 'bar'): ?>
                                             <div class="progress-bar">
-                                                <div class="progress-fill" style="width: <?= $task['progress'] ?? 0 ?>%"></div>
-                                                <span class="progress-text"><?= $task['progress'] ?? 0 ?>%</span>
+                                                <div class="progress-fill" style="width: <?= $displayProgress ?>%"></div>
+                                                <span class="progress-text"><?= $displayProgress ?>%</span>
                                             </div>
                                             <?php if ($is_my_task && !$is_done): ?>
                                                 <form method="post" action="update_task.php" style="margin-top: 8px;">
                                                     <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
                                                     <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
-                                                    <input type="range" name="progress" min="0" max="100" value="<?= $task['progress'] ?? 0 ?>" 
+                                                    <input type="range" name="progress" min="0" max="100" value="<?= $displayProgress ?>" 
                                                            class="progress-slider" onchange="return updateTaskAjax(this.form)" style="width: 100%; cursor: pointer;">
                                                 </form>
-                                            <?php elseif ($is_my_task && is_task_complete($task)): ?>
+                                            <?php elseif ($is_my_task && $taskIsCompleted): ?>
                                                 <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-top: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️ Supprimer</button>
                                             <?php endif; ?>
                                         <?php else: ?>
-                                            <?php if ($is_my_task): ?>
+                                            <?php if ($is_my_task && !$is_done): ?>
                                                 <form method="post" action="update_task.php">
                                                     <input type="hidden" name="project_id" value="<?= htmlspecialchars($project['id']) ?>">
                                                     <input type="hidden" name="task_id" value="<?= htmlspecialchars($task['id']) ?>">
                                                     <select name="status" onchange="return updateTaskAjax(this.form)">
-                                                        <option value="todo" <?= $task['status'] === 'todo' ? 'selected' : '' ?>>À faire
-                                                        </option>
-                                                        <option value="in_progress" <?= $task['status'] === 'in_progress' ? 'selected' : '' ?>>
-                                                            En cours</option>
-                                                        <option value="done" <?= $task['status'] === 'done' ? 'selected' : '' ?>>Terminé
-                                                        </option>
+                                                        <option value="todo" <?= $displayStatus === 'todo' ? 'selected' : '' ?>>À faire</option>
+                                                        <option value="in_progress" <?= $displayStatus === 'in_progress' ? 'selected' : '' ?>>En cours</option>
+                                                        <option value="done" <?= $displayStatus === 'done' ? 'selected' : '' ?>>Terminé</option>
                                                     </select>
                                                 </form>
                                             <?php else: ?>
-                                                <?= htmlspecialchars(status_label($task['status'])) ?>
-                                                <?php if (is_task_complete($task)): ?>
+                                                <?= htmlspecialchars(status_label($displayStatus)) ?>
+                                                <?php if ($taskIsCompleted): ?>
                                                     <button type="button" class="btn-delete" onclick="return deleteTaskAjax('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>')" style="margin-left: 8px; padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85rem;">🗑️</button>
                                                 <?php endif; ?>
                                             <?php endif; ?>
@@ -443,16 +804,6 @@ usort($member_projects, function ($a, $b) {
                     </table>
                 </div>
             </article>
-            <?php if (($project['status'] ?? 'active') !== 'done'): ?>
-    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
-        <a href="modify_project.php?id=<?= htmlspecialchars($project['id']) ?>" 
-            class="btn-secondary" 
-            style="display:inline-block;">
-            Modifier le projet
-        </a>
-    </div>
-<?php endif; ?>
-
         <?php endforeach; ?>
     <?php endif; ?>
 </section>
