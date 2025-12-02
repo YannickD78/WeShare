@@ -59,11 +59,14 @@ $tasks = [];
 $task_titles = $_POST['task_title'] ?? [];
 $task_assigned_to = $_POST['task_assigned_to'] ?? [];
 $task_modes = $_POST['task_mode'] ?? [];
+$task_recurring = $_POST['task_recurring'] ?? [];
+$task_recurring_days = $_POST['task_recurring_days'] ?? [];
 
 for ($i = 0; $i < count($task_titles); $i++) {
     $title = trim($task_titles[$i] ?? '');
     $assigned_email = trim($task_assigned_to[$i] ?? '');
     $mode = trim($task_modes[$i] ?? 'status');
+    $is_recurring = isset($task_recurring[$i]) && $task_recurring[$i] === 'on' ? true : false;
     
     // Valider le mode
     if ($mode !== 'bar') {
@@ -73,6 +76,19 @@ for ($i = 0; $i < count($task_titles); $i++) {
     if ($title === '') {
         continue;
     }
+    
+    // Parse recurring days
+    $recurring_days = [];
+    if ($is_recurring && isset($task_recurring_days[$i]) && is_array($task_recurring_days[$i])) {
+        $valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        foreach ($task_recurring_days[$i] as $day) {
+            $day = strtolower(trim($day));
+            if (in_array($day, $valid_days)) {
+                $recurring_days[] = $day;
+            }
+        }
+    }
+    
     $tasks[] = [
         'id' => generate_id('t_'),
         'title' => $title,
@@ -80,6 +96,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         'status' => 'todo',
         'progress' => 0,
         'mode' => $mode,
+        'is_recurring' => $is_recurring,
+        'recurring_days' => $recurring_days,
     ];
 }
 

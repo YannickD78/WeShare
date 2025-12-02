@@ -100,12 +100,15 @@ $task_titles = $_POST['task_title'] ?? [];
 $task_assigned_to = $_POST['task_assigned_to'] ?? [];
 $task_ids = $_POST['task_id'] ?? [];
 $task_modes = $_POST['task_mode'] ?? [];
+$task_recurring = $_POST['task_recurring'] ?? [];
+$task_recurring_days = $_POST['task_recurring_days'] ?? [];
 
 for ($i = 0; $i < count($task_titles); $i++) {
     $title = trim($task_titles[$i] ?? '');
     $assigned_email = trim($task_assigned_to[$i] ?? '');
     $task_id = $task_ids[$i] ?? null;
     $mode = trim($task_modes[$i] ?? 'status');
+    $is_recurring = isset($task_recurring[$i]) && $task_recurring[$i] === 'on' ? true : false;
     
     // Valider le mode
     if ($mode !== 'bar') {
@@ -124,11 +127,28 @@ for ($i = 0; $i < count($task_titles); $i++) {
     // Chercher la tâche existante pour récupérer son statut et progression
     $status = 'todo';
     $progress = 0;
+    $existing_recurring = false;
+    $existing_recurring_days = [];
+    
     foreach ($project['tasks'] as $old_task) {
         if ($old_task['id'] === $task_id) {
             $status = $old_task['status'] ?? 'todo';
             $progress = $old_task['progress'] ?? 0;
+            $existing_recurring = $old_task['is_recurring'] ?? false;
+            $existing_recurring_days = $old_task['recurring_days'] ?? [];
             break;
+        }
+    }
+    
+    // Parse recurring days
+    $recurring_days = [];
+    if ($is_recurring && isset($task_recurring_days[$i]) && is_array($task_recurring_days[$i])) {
+        $valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        foreach ($task_recurring_days[$i] as $day) {
+            $day = strtolower(trim($day));
+            if (in_array($day, $valid_days)) {
+                $recurring_days[] = $day;
+            }
         }
     }
     
@@ -139,6 +159,8 @@ for ($i = 0; $i < count($task_titles); $i++) {
         'status' => $status,
         'progress' => $progress,
         'mode' => $mode,
+        'is_recurring' => $is_recurring,
+        'recurring_days' => $recurring_days,
     ];
 }
 

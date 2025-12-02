@@ -104,7 +104,7 @@ $is_creator = (strtolower($project['creator_email']) === $user_email);
         </p>
 
         <div id="tasks-container">
-            <?php foreach ($project['tasks'] as $task): ?>
+            <?php foreach ($project['tasks'] as $taskIndex => $task): ?>
                 <div class="task-row">
                     <input type="text" name="task_title[]" placeholder="Titre de la tâche" value="<?= htmlspecialchars($task['title']) ?>">
                     <select name="task_assigned_to[]">
@@ -119,8 +119,34 @@ $is_creator = (strtolower($project['creator_email']) === $user_email);
                         <option value="status" <?= ($task['mode'] ?? 'status') === 'status' ? 'selected' : '' ?>>Statut</option>
                         <option value="bar" <?= ($task['mode'] ?? 'status') === 'bar' ? 'selected' : '' ?>>Barre</option>
                     </select>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" name="task_recurring[]" class="task-recurring-check" <?= ($task['is_recurring'] ?? false) ? 'checked' : '' ?> onchange="toggleRecurringDays(this)">
+                        <span>Hebdomadaire</span>
+                    </label>
                     <input type="hidden" name="task_id[]" value="<?= htmlspecialchars($task['id']) ?>">
                     <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
+                    <?php if ($task['is_recurring'] ?? false): ?>
+                        <div class="recurring-days-container" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px; background: #f9f9f9; border-radius: 4px; width: 100%;">
+                            <?php 
+                            $days = [
+                                ['label' => 'Lun', 'value' => 'mon'],
+                                ['label' => 'Mar', 'value' => 'tue'],
+                                ['label' => 'Mer', 'value' => 'wed'],
+                                ['label' => 'Jeu', 'value' => 'thu'],
+                                ['label' => 'Ven', 'value' => 'fri'],
+                                ['label' => 'Sam', 'value' => 'sat'],
+                                ['label' => 'Dim', 'value' => 'sun']
+                            ];
+                            $recurring_days = $task['recurring_days'] ?? [];
+                            foreach ($days as $day):
+                            ?>
+                                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                    <input type="checkbox" name="task_recurring_days[<?= $taskIndex ?>][]" value="<?= htmlspecialchars($day['value']) ?>" <?= in_array($day['value'], $recurring_days) ? 'checked' : '' ?>>
+                                    <span><?= htmlspecialchars($day['label']) ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             <?php endforeach; ?>
         </div>

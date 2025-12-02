@@ -123,6 +123,10 @@ function addTaskRow() {
             <option value="status">Statut</option>
             <option value="bar">Barre</option>
         </select>
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input type="checkbox" name="task_recurring[]" class="task-recurring-check" onchange="toggleRecurringDays(this)">
+            <span>Hebdomadaire</span>
+        </label>
         <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
     `;
     container.appendChild(div);
@@ -140,6 +144,53 @@ function removeTaskRow(button) {
     const row = button.closest('.task-row');
     if (row) {
         row.remove();
+    }
+}
+
+function toggleRecurringDays(checkbox) {
+    const taskRow = checkbox.closest('.task-row');
+    if (!taskRow) return;
+    
+    // Get the task index to create proper indexed names
+    const taskIndex = Array.from(document.querySelectorAll('.task-row')).indexOf(taskRow);
+    
+    let recurringDaysContainer = taskRow.querySelector('.recurring-days-container');
+    
+    if (checkbox.checked) {
+        if (!recurringDaysContainer) {
+            // Create the recurring days selector
+            recurringDaysContainer = document.createElement('div');
+            recurringDaysContainer.className = 'recurring-days-container';
+            recurringDaysContainer.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px; background: #f9f9f9; border-radius: 4px; width: 100%;';
+            
+            const days = [
+                { label: 'Lun', value: 'mon' },
+                { label: 'Mar', value: 'tue' },
+                { label: 'Mer', value: 'wed' },
+                { label: 'Jeu', value: 'thu' },
+                { label: 'Ven', value: 'fri' },
+                { label: 'Sam', value: 'sat' },
+                { label: 'Dim', value: 'sun' }
+            ];
+            
+            days.forEach(day => {
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; gap: 4px; cursor: pointer;';
+                label.innerHTML = `
+                    <input type="checkbox" name="task_recurring_days[${taskIndex}][]" value="${day.value}">
+                    <span>${day.label}</span>
+                `;
+                recurringDaysContainer.appendChild(label);
+            });
+            
+            taskRow.appendChild(recurringDaysContainer);
+        } else {
+            recurringDaysContainer.style.display = 'flex';
+        }
+    } else {
+        if (recurringDaysContainer) {
+            recurringDaysContainer.style.display = 'none';
+        }
     }
 }
 
@@ -197,7 +248,17 @@ function toggleTasksView(projectId) {
 window.updateTaskAjax = function(form) {
     // Create FormData
     const formData = new FormData(form);
-    const progressField = form.querySelector('input[name="progress"]');
+    const projectId = formData.get('project_id');
+    const taskId = formData.get('task_id');
+    const status = formData.get('status');
+    const progress = formData.get('progress');
+    
+    console.log('Envoi AJAX:', {
+        project_id: projectId,
+        task_id: taskId,
+        status: status,
+        progress: progress
+    });
     
     // Send via fetch with AJAX header
     fetch('update_task.php', {
@@ -208,30 +269,43 @@ window.updateTaskAjax = function(form) {
         }
     })
     .then(response => {
+        console.log('Réponse reçue:', response.status);
         if (!response.ok) throw new Error('Network response was not ok');
         return response.json();
     })
     .then(data => {
-        // On success, update the progress bar display if it's a progress field
-        if (progressField && data.success) {
-            const progressValue = progressField.value;
-            // Find the progress bar in the parent td
-            const td = form.closest('td');
-            if (td) {
-                const progressBar = td.querySelector('.progress-bar');
-                if (progressBar) {
-                    const progressFill = progressBar.querySelector('.progress-fill');
-                    const progressText = progressBar.querySelector('.progress-text');
-                    if (progressFill) {
-                        progressFill.style.width = progressValue + '%';
+        console.log('Données JSON reçues:', data);
+        
+        if (data.success) {
+            // Update all matching task rows in both "Mes tâches" and "Toutes les tâches" tables
+            const allTaskRows = document.querySelectorAll(`tr[data-task-id="${taskId}"][data-project-id="${projectId}"]`);
+            
+            allTaskRows.forEach(row => {
+                const td = row.querySelector('td:last-child'); // Évaluation column
+                if (td && status) {
+                    // Status update
+                    const select = td.querySelector('select');
+                    if (select) {
+                        select.value = status;
+                        console.log('Status updated in row:', status);
                     }
-                    if (progressText) {
-                        progressText.textContent = progressValue + '%';
+                } else if (td && progress !== undefined) {
+                    // Progress update
+                    const progressBar = td.querySelector('.progress-bar');
+                    if (progressBar) {
+                        const progressFill = progressBar.querySelector('.progress-fill');
+                        const progressText = progressBar.querySelector('.progress-text');
+                        if (progressFill) {
+                            progressFill.style.width = progress + '%';
+                        }
+                        if (progressText) {
+                            progressText.textContent = progress + '%';
+                        }
+                        console.log('Progress updated in row:', progress + '%');
                     }
                 }
-            }
+            });
         }
-        // Status updates are already reflected in the DOM
     })
     .catch(error => {
         console.error('Error updating task:', error);
@@ -245,6 +319,52 @@ window.updateTaskAjax = function(form) {
 document.addEventListener('DOMContentLoaded', function() {
     updateTaskAssigneeSelects();
 });
+
+// Delete task via AJAX
+window.deleteTaskAjax = function(projectId, taskId) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?')) {
+        return false;
+    }
+    
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    formData.append('task_id', taskId);
+    
+    console.log('Suppression tâche:', { project_id: projectId, task_id: taskId });
+    
+    fetch('delete_task.php', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        console.log('Réponse reçue:', response.status);
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.json();
+    })
+    .then(data => {
+        console.log('Données JSON reçues:', data);
+        
+        if (data.success) {
+            // Remove all matching task rows from both tables
+            const allTaskRows = document.querySelectorAll(`tr[data-task-id="${taskId}"][data-project-id="${projectId}"]`);
+            allTaskRows.forEach(row => {
+                row.remove();
+            });
+            console.log('Tâche supprimée');
+        } else {
+            alert('Erreur: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting task:', error);
+        alert('Erreur lors de la suppression. Veuillez réessayer.');
+    });
+    
+    return false;
+};
 
 document.addEventListener('DOMContentLoaded', function() {
 // Fonction pour basculer entre "Mes tâches" et "Toutes les tâches"
@@ -287,3 +407,147 @@ document.querySelectorAll('.tasks-toggle').forEach(container => {
 
 
 });
+
+/**
+ * Update task progress for a specific day via AJAX
+ * Used in weekly_view.php and day_view.php
+ * Accepts either day abbreviation (mon-sun) or full date (YYYY-MM-DD)
+ */
+function updateDailyTaskProgress(projectId, taskId, dayOrDate, action, value = null) {
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    formData.append('task_id', taskId);
+    formData.append('day', dayOrDate);
+    formData.append('action', action);
+    if (value !== null) {
+        formData.append('value', value);
+    }
+    
+    fetch('update_task_daily.php', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Find the container with matching task-id and date/day
+            let container = document.querySelector(`[data-task-id="${taskId}"][data-date="${dayOrDate}"]`);
+            if (!container) {
+                container = document.querySelector(`[data-task-id="${taskId}"][data-day="${dayOrDate}"]`);
+            }
+            
+            // Fallback: search by just task-id and manually check date
+            if (!container) {
+                const allContainers = document.querySelectorAll(`[data-task-id="${taskId}"]`);
+                for (let c of allContainers) {
+                    const dataDate = c.getAttribute('data-date');
+                    const dataDay = c.getAttribute('data-day');
+                    if (dataDate === dayOrDate || dataDay === dayOrDate) {
+                        container = c;
+                        break;
+                    }
+                }
+            }
+            
+            if (container) {
+                // Update the UI within this container
+                const progressBar = container.querySelector('.task-progress-bar');
+                const progressText = container.querySelector('.task-progress-text');
+                const incrementBtn = container.querySelector('.btn-increment-day');
+                const completeBtn = container.querySelector('.btn-complete-day');
+                
+                if (progressBar) {
+                    progressBar.style.width = data.progress + '%';
+                    progressBar.textContent = data.progress > 15 ? data.progress + '%' : '';
+                }
+                if (progressText) {
+                    progressText.textContent = data.progress + '%';
+                }
+                
+                // If complete, disable buttons and update UI
+                if (data.is_complete) {
+                    if (incrementBtn) {
+                        incrementBtn.disabled = true;
+                        incrementBtn.style.opacity = '0.5';
+                        incrementBtn.style.cursor = 'not-allowed';
+                    }
+                    if (completeBtn) {
+                        completeBtn.disabled = true;
+                        completeBtn.textContent = '✓ Complétée (' + data.progress + '%)';
+                        completeBtn.style.opacity = '1';
+                        completeBtn.style.cursor = 'not-allowed';
+                    }
+                }
+                
+                console.log('Progress updated successfully:', { taskId, dayOrDate, progress: data.progress });
+            } else {
+                console.warn('Container not found for task', taskId, 'date/day', dayOrDate);
+                console.log('Available containers:', document.querySelectorAll('[data-task-id]').length);
+            }
+        } else {
+            alert('Erreur: ' + (data.error || 'Mise à jour échouée'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Erreur lors de la mise à jour');
+    });
+}
+
+/**
+ * Update task status via AJAX (Commencer, Terminer, Marquer complète)
+ * @param {string} projectId - Project ID
+ * @param {string} taskId - Task ID
+ * @param {string} status - New status (todo, in_progress, done)
+ * @param {HTMLElement} button - The button element clicked
+ * @param {string} date - Optional: Date in YYYY-MM-DD format for recurring tasks
+ */
+function updateTaskStatus(projectId, taskId, status, button, date = null) {
+    if (!button) {
+        console.error('Button element not provided');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    formData.append('task_id', taskId);
+    formData.append('status', status);
+    if (date) {
+        formData.append('date', date);
+    }
+
+    fetch('update_task.php', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update button state based on new status
+            const parent = button.parentElement;
+            
+            if (status === 'done') {
+                // Replace all action buttons with disabled "Complétée" button
+                parent.innerHTML = '<button disabled style="padding: 6px 12px; background: #ccc; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 0.85em;">✓ Complétée</button>';
+            } else if (status === 'in_progress') {
+                // Hide "Commencer" button, keep "Terminer" button
+                button.style.display = 'none';
+            }
+            
+            // Optional: show a success message
+            console.log('Task status updated to: ' + status);
+        } else {
+            alert('Erreur: ' + (data.error || 'Mise à jour échouée'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Erreur lors de la mise à jour du statut');
+    });
+}

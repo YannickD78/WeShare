@@ -78,6 +78,10 @@ $user = current_user();
                     <option value="status">Statut</option>
                     <option value="bar">Barre</option>
                 </select>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" name="task_recurring[]" class="task-recurring-check" onchange="toggleRecurringDays(this)">
+                    <span>Hebdomadaire</span>
+                </label>
                 <button type="button" class="btn-secondary btn-remove" onclick="removeTaskRow(this)">✕ Supprimer</button>
             </div>
         </div>
@@ -99,4 +103,52 @@ document.addEventListener('DOMContentLoaded', function() {
         updateTaskAssigneeSelects();
     }
 });
-</script>
+
+// Toggle recurring days selection
+function toggleRecurringDays(checkbox) {
+    const taskRow = checkbox.closest('.task-row');
+    if (!taskRow) return;
+    
+    // Get the task index to create proper indexed names
+    const taskIndex = Array.from(document.querySelectorAll('.task-row')).indexOf(taskRow);
+    
+    let recurringDaysContainer = taskRow.querySelector('.recurring-days-container');
+    
+    if (checkbox.checked) {
+        if (!recurringDaysContainer) {
+            // Create the recurring days selector
+            recurringDaysContainer = document.createElement('div');
+            recurringDaysContainer.className = 'recurring-days-container';
+            recurringDaysContainer.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px; background: #f9f9f9; border-radius: 4px;';
+            
+            const days = [
+                { label: 'Lun', value: 'mon' },
+                { label: 'Mar', value: 'tue' },
+                { label: 'Mer', value: 'wed' },
+                { label: 'Jeu', value: 'thu' },
+                { label: 'Ven', value: 'fri' },
+                { label: 'Sam', value: 'sat' },
+                { label: 'Dim', value: 'sun' }
+            ];
+            
+            days.forEach(day => {
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; gap: 4px; cursor: pointer;';
+                label.innerHTML = `
+                    <input type="checkbox" name="task_recurring_days[${taskIndex}][]" value="${day.value}">
+                    <span>${day.label}</span>
+                `;
+                recurringDaysContainer.appendChild(label);
+            });
+            
+            taskRow.appendChild(recurringDaysContainer);
+        } else {
+            recurringDaysContainer.style.display = 'flex';
+        }
+    } else {
+        if (recurringDaysContainer) {
+            recurringDaysContainer.style.display = 'none';
+        }
+    }
+}
+</script></script>
