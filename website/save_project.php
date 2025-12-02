@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $name = trim($_POST['project_name'] ?? '');
 $description = trim($_POST['project_description'] ?? '');
+$project_id = trim($_POST['project_id'] ?? '');
 
 if ($name === '') {
     $_SESSION['error'] = "Le nom du projet est obligatoire.";
@@ -104,7 +105,7 @@ for ($i = 0; $i < count($task_titles); $i++) {
 $projects = load_projects();
 
 $project = [
-    'id' => generate_id('p_'),
+    'id' => $project_id ?: generate_id('proj_'),
     'name' => $name,
     'description' => $description,
     'creator_id' => $user['id'],

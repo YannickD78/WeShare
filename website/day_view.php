@@ -81,7 +81,11 @@ foreach ($tasksForDay as $task) {
     
     if ($isBarMode) {
         $stats['bar_tasks']++;
-        $stats['total_progress'] += $task['progress'] ?? 0;
+        // For recurring tasks, use daily progress; for non-recurring, use global progress
+        $dayProgress = ($task['is_recurring'] ?? false) 
+            ? get_daily_progress($task, $selectedDateStr)
+            : ($task['progress'] ?? 0);
+        $stats['total_progress'] += $dayProgress;
     } else {
         $stats['status_tasks']++;
     }
@@ -147,10 +151,12 @@ $completion_percentage = $stats['total'] > 0 ? round(($stats['done'] / $stats['t
             <div style="font-size: 1em; opacity: 0.9; margin-top: 5px;">Complétées (<?= $stats['done'] ?>/<?= $stats['total'] ?>)</div>
         </div>
 
+        <?php if ($stats['bar_tasks'] > 0): ?>
         <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
             <div style="font-size: 3em; font-weight: bold;"><?= $stats['avg_progress'] ?>%</div>
             <div style="font-size: 1em; opacity: 0.9; margin-top: 5px;">Progression moyenne</div>
         </div>
+        <?php endif; ?>
 
         <div style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
             <div style="font-size: 3em; font-weight: bold;"><?= $stats['in_progress'] ?></div>
@@ -192,16 +198,15 @@ $completion_percentage = $stats['total'] > 0 ? round(($stats['done'] / $stats['t
                 <?php foreach ($tasksForDay as $task):
                     $project = $projectsByTask[$task['id']] ?? [];
                     $isBarMode = ($task['mode'] ?? 'status') === 'bar';
-                    $isComplete = is_task_complete($task, ($task['is_recurring'] ?? false) ? $selectedDate->format('Y-m-d') : null);
+                    $dateForCheck = ($task['is_recurring'] ?? false) ? $selectedDate->format('Y-m-d') : null;
+                    $isComplete = is_task_complete($task, $dateForCheck);
                     
-                    $statusColors = [
-                        'todo' => ['bg' => '#e8f4f8', 'border' => '#007bff'],
-                        'in_progress' => ['bg' => '#fff4e8', 'border' => '#fd7e14'],
-                        'done' => ['bg' => '#e8f8e8', 'border' => '#28a745']
-                    ];
-                    $colors = $statusColors[$task['status'] ?? 'todo'] ?? $statusColors['todo'];
+                    // Get daily status for recurring tasks, global status for non-recurring
+                    $displayStatus = ($task['is_recurring'] ?? false) 
+                        ? get_daily_status($task, $selectedDate->format('Y-m-d'))
+                        : ($task['status'] ?? 'todo');
                 ?>
-                    <div style="background: <?= $colors['bg'] ?>; border-left: 5px solid <?= $colors['border'] ?>; padding: 15px; border-radius: 6px;" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-date="<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>">
+                    <div style="background: <?= $isComplete ? '#e8f8e8' : '#f9f9f9' ?>; border-left: 5px solid <?= $isComplete ? '#28a745' : '#007bff' ?>; padding: 15px; border-radius: 6px;" data-task-id="<?= htmlspecialchars($task['id']) ?>" data-date="<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>">
                         <div style="display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start;">
                             <div>
                                 <h4 style="margin: 0 0 8px 0; font-size: 1.1em;"><?= htmlspecialchars($task['title']) ?></h4>
@@ -213,8 +218,8 @@ $completion_percentage = $stats['total'] > 0 ? round(($stats['done'] / $stats['t
                                 </p>
                             </div>
 
-                            <div style="background: <?= $colors['border'] ?>; color: white; padding: 8px 16px; border-radius: 20px; white-space: nowrap; text-align: center;">
-                                <strong><?= htmlspecialchars(status_label($task['status'])) ?></strong>
+                            <div class="task-status-badge" style="background: <?= $isComplete ? '#28a745' : '#007bff' ?>; color: white; padding: 8px 16px; border-radius: 20px; white-space: nowrap; text-align: center;">
+                                <strong><?= htmlspecialchars(status_label($displayStatus)) ?></strong>
                             </div>
                         </div>
 
@@ -243,8 +248,8 @@ $completion_percentage = $stats['total'] > 0 ? round(($stats['done'] / $stats['t
                                 <button type="button" class="btn-complete-day" onclick="updateDailyTaskProgress('<?= htmlspecialchars($project['id']) ?>', '<?= htmlspecialchars($task['id']) ?>', '<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>', 'complete')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">✓ Terminer</button>
                             <?php elseif ($isBarMode && $isDayComplete): ?>
                                 <button disabled style="padding: 6px 12px; background: #ccc; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 0.85em;">✓ Complétée (<?= $dailyProgress ?>%)</button>
-                            <?php elseif (!$isBarMode && !$isComplete): ?>
-                                <?php if ($task['status'] === 'todo'): ?>
+                            <?php elseif (!$isBarMode && $displayStatus !== 'done'): ?>
+                                <?php if ($displayStatus === 'todo'): ?>
                                     <button onclick="updateTaskStatus('<?= htmlspecialchars($project['id'] ?? '') ?>', '<?= htmlspecialchars($task['id']) ?>', 'in_progress', this<?php if ($task['is_recurring'] ?? false): ?>, '<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>'<?php endif; ?>)" style="padding: 6px 12px; background: #fd7e14; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">▶ Commencer</button>
                                 <?php endif; ?>
                                 <button onclick="updateTaskStatus('<?= htmlspecialchars($project['id'] ?? '') ?>', '<?= htmlspecialchars($task['id']) ?>', 'done', this<?php if ($task['is_recurring'] ?? false): ?>, '<?= htmlspecialchars($selectedDate->format('Y-m-d')) ?>'<?php endif; ?>)" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">✓ Terminer</button>

@@ -212,10 +212,12 @@ $avgProgress = $barTasksCount > 0 ? round($totalProgress / $barTasksCount) : 0;
             <div style="font-size: 0.9em; opacity: 0.9;">Complétées</div>
         </div>
         
+        <?php if ($barTasksCount > 0): ?>
         <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
             <div style="font-size: 2em; font-weight: bold;"><?= $avgProgress ?>%</div>
             <div style="font-size: 0.9em; opacity: 0.9;">Progression moyenne</div>
         </div>
+        <?php endif; ?>
     </div>
 
     <!-- Tasks for the day -->

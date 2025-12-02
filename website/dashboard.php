@@ -227,10 +227,30 @@ usort($member_projects, function ($a, $b) {
                     <ul>
                         <?php foreach ($project['members'] as $member):
                             $is_creator_member = (strtolower($member['email']) === strtolower($project['creator_email']));
+                            // Check if this member has accepted (is in their member_projects)
+                            $member_has_accepted = false;
+                            if (!$is_creator_member) {
+                                foreach ($projects as $p) {
+                                    if ($p['id'] === $project['id']) {
+                                        // Check if member is in this project's members list and it's in THEIR member_projects
+                                        foreach ($p['members'] as $m) {
+                                            if (strtolower($m['email']) === strtolower($member['email'])) {
+                                                // Now check if this member would see this project as a member project
+                                                // by checking if they're NOT the creator
+                                                if (strtolower($p['creator_email']) !== strtolower($member['email'])) {
+                                                    $member_has_accepted = true;
+                                                }
+                                                break;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
                             ?>
                             <li>
                                 <?= htmlspecialchars($member['name']) ?> - <?= htmlspecialchars($member['email']) ?>
-                                <?php if (!$is_creator_member): ?>
+                                <?php if (!$is_creator_member && !$member_has_accepted): ?>
                                     <span class="badge badge-pending">Invitation en attente</span>
                                 <?php endif; ?>
                             </li>
@@ -611,6 +631,7 @@ usort($member_projects, function ($a, $b) {
                             <tbody>
                                 <?php foreach ($my_tasks as $task): 
                                     // For recurring tasks, get the relevant date and display values
+                                    $is_my_task = true; // We're already filtering by $my_tasks, so this is always true
                                     $relevantDate = null;
                                     $displayStatus = $task['status'] ?? 'todo';
                                     $displayProgress = $task['progress'] ?? 0;

@@ -75,9 +75,10 @@ $is_creator = (strtolower($project['creator_email']) === $user_email);
         </button>
         <div id="invite-link-box" class="invite-link-box" style="display: none;">
             <p>Partagez ce lien avec les membres que vous avez ajoutés&nbsp;:</p>
-            <code>https://weshare.alwaysdata.net/</code>
+            <code id="invite-link-code" style="cursor: pointer; padding: 8px 12px; background: #f5f5f5; display: inline-block; border-radius: 4px; border: 1px solid #ddd; user-select: all; transition: all 0.2s;" onmouseover="this.style.background='#e8e8e8'; this.style.borderColor='#999';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#ddd';" onclick="copyInviteLink(this)">https://weshare.alwaysdata.net/?project_id=<?= htmlspecialchars($project_id) ?></code>
+            <p id="copy-feedback" style="display: none; color: #4caf50; font-weight: bold; margin-top: 8px;">✓ Lien copié !</p>
             <p class="hint">
-                Il suffit de copier ce lien et de l'envoyer à vos colocataires / camarades / amis.
+                Cliquez sur le lien pour le copier, puis envoyez-le à vos colocataires / camarades / amis.
                 Ils pourront créer un compte ou se connecter, puis voir ce projet dans leur tableau de bord.
             </p>
         </div>

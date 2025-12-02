@@ -604,26 +604,40 @@ function updateTaskStatus(projectId, taskId, status, button, date = null) {
                 return;
             }
             
-            // Update the status badge
-            const statusSpan = taskContainer.querySelector('span[style*="background"]');
-            if (statusSpan) {
+            // Update the status badge - support both span and div with class
+            let statusBadge = taskContainer.querySelector('span[style*="background"]');
+            if (!statusBadge) {
+                statusBadge = taskContainer.querySelector('.task-status-badge');
+            }
+            if (statusBadge) {
                 const statusLabels = {
                     'todo': '⏳ À faire',
                     'in_progress': '🔄 En cours',
                     'done': '✓ Terminé'
                 };
-                statusSpan.textContent = statusLabels[status] || status;
+                const statusInner = statusBadge.querySelector('strong') || statusBadge;
+                statusInner.textContent = statusLabels[status] || status;
+                
+                // Update background color based on status
+                let bgColor = '#007bff';
                 if (status === 'done') {
-                    statusSpan.style.background = '#4caf50';
-                } else {
-                    statusSpan.style.background = '#007bff';
+                    bgColor = '#28a745';
+                } else if (status === 'in_progress') {
+                    bgColor = '#fd7e14';
                 }
+                statusBadge.style.background = bgColor;
             }
             
             // Update the background color of the task container
             if (status === 'done') {
                 taskContainer.style.background = '#e8f8e8';
-                taskContainer.style.borderLeft = '4px solid #4caf50';
+                taskContainer.style.borderLeftColor = '#28a745';
+            } else if (status === 'in_progress') {
+                taskContainer.style.background = '#fff4e8';
+                taskContainer.style.borderLeftColor = '#fd7e14';
+            } else if (status === 'todo') {
+                taskContainer.style.background = '#e8f4f8';
+                taskContainer.style.borderLeftColor = '#007bff';
             }
             
             // Update button state based on new status
@@ -633,8 +647,8 @@ function updateTaskStatus(projectId, taskId, status, button, date = null) {
                 // Replace all action buttons with disabled "Complétée" button
                 parent.innerHTML = '<button disabled style="padding: 6px 12px; background: #ccc; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 0.85em;">✓ Complétée</button>';
             } else if (status === 'in_progress') {
-                // Hide "Commencer" button, keep "Terminer" button
-                button.style.display = 'none';
+                // Show both "Commencer" and "Terminer" or just "Terminer" based on current state
+                // For now, keep the button state as is
             }
             
             // Optional: show a success message
@@ -847,3 +861,54 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+/**
+ * Copy invite link to clipboard
+ */
+function copyInviteLink(codeElement) {
+    const link = codeElement.textContent.trim();
+    
+    // Use modern Clipboard API if available
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+            showCopyFeedback();
+        }).catch(() => {
+            fallbackCopyToClipboard(link);
+        });
+    } else {
+        fallbackCopyToClipboard(link);
+    }
+}
+
+/**
+ * Fallback method for older browsers
+ */
+function fallbackCopyToClipboard(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        showCopyFeedback();
+    } catch (err) {
+        console.error('Fallback: Could not copy text', err);
+    }
+    document.body.removeChild(textarea);
+}
+
+/**
+ * Show feedback message
+ */
+function showCopyFeedback() {
+    const feedback = document.getElementById('copy-feedback');
+    if (feedback) {
+        feedback.style.display = 'inline-block';
+        setTimeout(() => {
+            feedback.style.display = 'none';
+        }, 3000);
+    }
+}
+
