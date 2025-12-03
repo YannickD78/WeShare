@@ -12,38 +12,86 @@ if (!$project_id) {
     exit;
 }
 
-$projects = load_projects();
-$project = null;
+try {
+    // On récupère les infos du projet
+    $stmt = $pdo->prepare("SELECT p.*, u.email as creator_email, u.nom as creator_name 
+                           FROM projects p 
+                           JOIN users u ON p.created_by = u.id 
+                           WHERE p.id = ?");
+    $stmt->execute([$project_id]);
+    $project = $stmt->fetch();
 
-foreach ($projects as $p) {
-    if ($p['id'] === $project_id) {
-        $project = $p;
-        break;
+    if (!$project) {
+        $_SESSION['error'] = "Projet introuvable.";
+        header('Location: dashboard.php');
+        exit;
     }
-}
 
-if (!$project) {
-    $_SESSION['error'] = "Projet introuvable.";
+    // On renomme 'nom' en 'name' pour compatibilité avec le html
+    $project['name'] = $project['nom'];
+
+    // On récupère les membres
+    $stmt = $pdo->prepare("SELECT u.nom as name, u.email 
+                           FROM participants part 
+                           JOIN users u ON part.user_id = u.id 
+                           WHERE part.project_id = ?");
+    $stmt->execute([$project_id]);
+    $members = $stmt->fetchAll();
+    
+    $creatorInList = false;
+    foreach($members as $m) {
+        if ($m['email'] === $project['creator_email']) $creatorInList = true;
+    }
+    if (!$creatorInList) {
+        array_unshift($members, ['name' => $project['creator_name'], 'email' => $project['creator_email']]);
+    }
+    $project['members'] = $members;
+
+    // On vérifie les droits (le user est-il membre ?)
+    $is_member = false;
+    $user_email = strtolower($user['email']);
+    foreach ($project['members'] as $member) {
+        if (strtolower($member['email']) === $user_email) {
+            $is_member = true;
+            break;
+        }
+    }
+
+    if (!$is_member) {
+        $_SESSION['error'] = "Vous n'avez pas la permission de modifier ce projet.";
+        header('Location: dashboard.php');
+        exit;
+    }
+
+    // On récupère les taches
+    $stmt = $pdo->prepare("SELECT t.*, u.email as assigned_email 
+                           FROM tasks t 
+                           LEFT JOIN users u ON t.assigned_to = u.id 
+                           WHERE t.project_id = ? 
+                           ORDER BY t.id ASC");
+    $stmt->execute([$project_id]);
+    $dbTasks = $stmt->fetchAll();
+
+    $tasks = [];
+    foreach ($dbTasks as $t) {
+        $tasks[] = [
+            'id' => $t['id'],
+            'title' => $t['titre'],
+            'assigned_to' => $t['assigned_email'] ?? '', // Pour le select
+            'mode' => $t['mode'],
+            'is_recurring' => (bool)$t['is_recurring'],
+            'recurring_days' => json_decode($t['recurring_days'] ?? '[]', true)
+        ];
+    }
+    $project['tasks'] = $tasks;
+
+    $is_creator = ($project['created_by'] == $user['id']);
+
+} catch (Exception $e) {
+    $_SESSION['error'] = "Erreur de base de données.";
     header('Location: dashboard.php');
     exit;
 }
-
-// Vérifier que l'utilisateur est membre du projet
-$is_member = false;
-$user_email = strtolower($user['email']);
-foreach ($project['members'] as $member) {
-    if (strtolower($member['email']) === $user_email) {
-        $is_member = true;
-        break;
-    }
-}
-if (!$is_member) {
-    $_SESSION['error'] = "Vous n'avez pas la permission de modifier ce projet.";
-    header('Location: dashboard.php');
-    exit;
-}
-
-$is_creator = (strtolower($project['creator_email']) === $user_email);
 ?>
 
 <?php include __DIR__ . '/includes/header.php'; ?>

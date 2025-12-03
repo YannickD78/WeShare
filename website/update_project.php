@@ -9,9 +9,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Stocker le mode de progression choisi
-$progress_mode = $_POST['progress_mode'] ?? ($project['progress_mode'] ?? 'status');
-
 $project_id = $_POST['project_id'] ?? null;
 $name = trim($_POST['project_name'] ?? '');
 $description = trim($_POST['project_description'] ?? '');
@@ -22,163 +19,143 @@ if (!$project_id || $name === '') {
     exit;
 }
 
-$projects = load_projects();
-$project = null;
-$project_index = null;
+try {
+    $pdo->beginTransaction();
 
-foreach ($projects as $index => $p) {
-    if ($p['id'] === $project_id) {
-        $project = $p;
-        $project_index = $index;
-        break;
-    }
-}
+    // On vérifie les droits et l'existence du projet
+    $stmt = $pdo->prepare("
+        SELECT p.id, p.created_by 
+        FROM projects p 
+        JOIN participants part ON p.id = part.project_id 
+        WHERE p.id = ? AND part.user_id = ?
+    ");
+    $stmt->execute([$project_id, $user['id']]);
+    $project = $stmt->fetch();
 
-if (!$project) {
-    $_SESSION['error'] = "Projet introuvable.";
-    header('Location: dashboard.php');
-    exit;
-}
+    if (!$project) {
+        throw new Exception("Projet introuvable ou droits insuffisants.");
+    }
 
-// Vérifier que l'utilisateur est membre du projet
-$is_member = false;
-$user_email = strtolower($user['email']);
-foreach ($project['members'] as $member) {
-    if (strtolower($member['email']) === $user_email) {
-        $is_member = true;
-        break;
-    }
-}
-if (!$is_member) {
-    $_SESSION['error'] = "Vous n'avez pas la permission de modifier ce projet.";
-    header('Location: dashboard.php');
-    exit;
-}
+    // On met à jour les infos de base
+    $stmt = $pdo->prepare("UPDATE projects SET nom = ?, description = ? WHERE id = ?");
+    $stmt->execute([$name, $description, $project_id]);
 
-// Traiter les membres
-$members = [];
-$member_names = $_POST['member_name'] ?? [];
-$member_emails = $_POST['member_email'] ?? [];
+    // On gère les membres (sync)
+    $member_emails_input = $_POST['member_email'] ?? [];
+    $member_names_input = $_POST['member_name'] ?? [];
+    $final_member_ids = [];
 
-for ($i = 0; $i < count($member_emails); $i++) {
-    $m_name = trim($member_names[$i] ?? '');
-    $m_email = trim($member_emails[$i] ?? '');
-    
-    if ($m_email === '' && $m_name === '') {
-        continue;
-    }
-    
-    if (!filter_var($m_email, FILTER_VALIDATE_EMAIL)) {
-        continue; // Filtrer les emails invalides
-    }
-    
-    $members[] = [
-        'name' => $m_name ?: $m_email,
-        'email' => strtolower($m_email),
-    ];
-}
+    $final_member_ids[] = $project['created_by'];
 
-// S'assurer que le créateur est dans la liste des membres
-$creator_email = strtolower($project['creator_email']);
-$already_in = false;
-foreach ($members as $m) {
-    if (strtolower($m['email']) === $creator_email) {
-        $already_in = true;
-        break;
-    }
-}
-if (!$already_in) {
-    $members[] = [
-        'name' => $project['creator_name'],
-        'email' => $creator_email,
-    ];
-}
+    for ($i = 0; $i < count($member_emails_input); $i++) {
+        $m_email = strtolower(trim($member_emails_input[$i] ?? ''));
+        $m_name = trim($member_names_input[$i] ?? '');
 
-// Traiter les tâches - conserver status/progress existants
-$tasks = [];
-$task_titles = $_POST['task_title'] ?? [];
-$task_assigned_to = $_POST['task_assigned_to'] ?? [];
-$task_ids = $_POST['task_id'] ?? [];
-$task_modes = $_POST['task_mode'] ?? [];
-$task_recurring = $_POST['task_recurring'] ?? [];
-$task_recurring_days = $_POST['task_recurring_days'] ?? [];
+        if ($m_email === '' || !filter_var($m_email, FILTER_VALIDATE_EMAIL)) continue;
 
-for ($i = 0; $i < count($task_titles); $i++) {
-    $title = trim($task_titles[$i] ?? '');
-    $assigned_email = trim($task_assigned_to[$i] ?? '');
-    $task_id = $task_ids[$i] ?? null;
-    $mode = trim($task_modes[$i] ?? 'status');
-    $is_recurring = isset($task_recurring[$i]) && $task_recurring[$i] === 'on' ? true : false;
-    
-    // Valider le mode
-    if ($mode !== 'bar') {
-        $mode = 'status';
-    }
-    
-    if ($title === '') {
-        continue;
-    }
-    
-    // Garder l'ID existant ou en générer un nouveau
-    if (!$task_id) {
-        $task_id = generate_id('t_');
-    }
-    
-    // Chercher la tâche existante pour récupérer son statut et progression
-    $status = 'todo';
-    $progress = 0;
-    $daily_progress = [];
-    $daily_status = [];
-    $existing_recurring = false;
-    $existing_recurring_days = [];
-    
-    foreach ($project['tasks'] as $old_task) {
-        if ($old_task['id'] === $task_id) {
-            $status = $old_task['status'] ?? 'todo';
-            $progress = $old_task['progress'] ?? 0;
-            $daily_progress = $old_task['daily_progress'] ?? [];
-            $daily_status = $old_task['daily_status'] ?? [];
-            $existing_recurring = $old_task['is_recurring'] ?? false;
-            $existing_recurring_days = $old_task['recurring_days'] ?? [];
-            break;
+        // Trouver ou créer l'utilisateur
+        $u = find_user_by_email($m_email);
+        if ($u) {
+            $final_member_ids[] = $u['id'];
+        } else {
+            $new_user = create_user($m_name ?: explode('@', $m_email)[0], $m_email, 'weshare_invite');
+            $final_member_ids[] = $new_user['id'];
         }
     }
     
-    // Parse recurring days
-    $recurring_days = [];
-    if ($is_recurring && isset($task_recurring_days[$i]) && is_array($task_recurring_days[$i])) {
-        $valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-        foreach ($task_recurring_days[$i] as $day) {
-            $day = strtolower(trim($day));
-            if (in_array($day, $valid_days)) {
-                $recurring_days[] = $day;
-            }
+    $final_member_ids = array_unique($final_member_ids);
+
+    // On supprime les anciens membres qui ne sont plus dans la liste
+    $placeholders = implode(',', array_fill(0, count($final_member_ids), '?'));
+    $sqlDeleteMembers = "DELETE FROM participants WHERE project_id = ? AND user_id NOT IN ($placeholders)";
+    // Puis on fusionne l'ID projet avec les IDs membres pour les paramètres
+    $stmt = $pdo->prepare($sqlDeleteMembers);
+    $stmt->execute(array_merge([$project_id], $final_member_ids));
+
+    // On ajoute les nouveaux membres
+    $stmtCheck = $pdo->prepare("SELECT id FROM participants WHERE project_id = ? AND user_id = ?");
+    
+    foreach ($final_member_ids as $uid) {
+        $stmtCheck->execute([$project_id, $uid]);
+        if (!$stmtCheck->fetch()) {
+            $stmtInsert = $pdo->prepare("INSERT INTO participants (project_id, user_id) VALUES (?, ?)");
+            $stmtInsert->execute([$project_id, $uid]);
         }
     }
+
+
+    // On gère les taches (sync)
     
-    $tasks[] = [
-        'id' => $task_id,
-        'title' => $title,
-        'assigned_to' => strtolower($assigned_email),
-        'status' => $status,
-        'progress' => $progress,
-        'mode' => $mode,
-        'is_recurring' => $is_recurring,
-        'recurring_days' => $recurring_days,
-        'daily_progress' => $daily_progress,
-        'daily_status' => $daily_status,
-    ];
+    $task_ids_input = $_POST['task_id'] ?? [];
+    $task_titles = $_POST['task_title'] ?? [];
+    $task_assigned_to = $_POST['task_assigned_to'] ?? [];
+    $task_modes = $_POST['task_mode'] ?? [];
+    $task_recurring = $_POST['task_recurring'] ?? [];
+    $task_recurring_days = $_POST['task_recurring_days'] ?? []; // Tableau à 2 dimensions
+
+    // On supprime les taches qui ne sont plus dans le formulaire
+    $valid_task_ids = array_filter($task_ids_input); // Enlève les vides (nouvelles taches)
+    
+    if (!empty($valid_task_ids)) {
+        $placeholders = implode(',', array_fill(0, count($valid_task_ids), '?'));
+        $sqlDeleteTasks = "DELETE FROM tasks WHERE project_id = ? AND id NOT IN ($placeholders)";
+        $stmt = $pdo->prepare($sqlDeleteTasks);
+        $stmt->execute(array_merge([$project_id], $valid_task_ids));
+    } else {
+        if (count($task_titles) > 0) {
+             $pdo->prepare("DELETE FROM tasks WHERE project_id = ?")->execute([$project_id]);
+        }
+        if (empty($task_titles)) {
+             $pdo->prepare("DELETE FROM tasks WHERE project_id = ?")->execute([$project_id]);
+        }
+    }
+
+
+    // On met à jour ou crée les taches
+    $stmtUpdate = $pdo->prepare("UPDATE tasks SET titre=?, assigned_to=?, mode=?, is_recurring=?, recurring_days=? WHERE id=? AND project_id=?");
+    $stmtInsert = $pdo->prepare("INSERT INTO tasks (project_id, titre, assigned_to, status, progress, mode, is_recurring, recurring_days, daily_progress, daily_status) VALUES (?, ?, ?, 'todo', 0, ?, ?, ?, '{}', '{}')");
+
+    for ($i = 0; $i < count($task_titles); $i++) {
+        $t_title = trim($task_titles[$i] ?? '');
+        if ($t_title === '') continue;
+
+        $t_id = $task_ids_input[$i] ?? '';
+        $t_assigned_email = strtolower(trim($task_assigned_to[$i] ?? ''));
+        $t_mode = ($task_modes[$i] ?? 'status') === 'bar' ? 'bar' : 'status';
+        
+        $t_is_rec = isset($task_recurring[$i]) ? 1 : 0; 
+        
+        $t_rec_days_json = '[]';
+        if ($t_is_rec && isset($task_recurring_days[$i])) {
+            $t_rec_days_json = json_encode($task_recurring_days[$i]);
+        }
+
+        // Trouver id assigné
+        $t_assigned_id = null;
+        if ($t_assigned_email) {
+            $u = find_user_by_email($t_assigned_email);
+            if ($u) $t_assigned_id = $u['id'];
+        }
+
+        if ($t_id) {
+            // Mise à jour
+            $stmtUpdate->execute([$t_title, $t_assigned_id, $t_mode, $t_is_rec, $t_rec_days_json, $t_id, $project_id]);
+        } else {
+            // Création
+            $stmtInsert->execute([$project_id, $t_title, $t_assigned_id, $t_mode, $t_is_rec, $t_rec_days_json]);
+        }
+    }
+
+    $pdo->commit();
+    $_SESSION['success'] = "Le projet a été modifié avec succès.";
+    header('Location: dashboard.php');
+    exit;
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    $_SESSION['error'] = "Erreur lors de la mise à jour : " . $e->getMessage();
+    header('Location: modify_project.php?id=' . urlencode($project_id));
+    exit;
 }
-
-// Mettre à jour le projet
-$project['name'] = $name;
-$project['description'] = $description;
-$project['members'] = $members;
-$project['tasks'] = $tasks;
-
-$projects[$project_index] = $project;
-save_projects($projects);
-
-$_SESSION['success'] = "Le projet a été modifié avec succès.";
-header('Location: dashboard.php');
-exit;

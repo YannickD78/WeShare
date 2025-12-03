@@ -9,23 +9,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $project_id = $_POST['project_id'] ?? '';
 $user = current_user();
-$email = strtolower($user['email']);
 
-$projects = load_projects();
-
-foreach ($projects as &$project) {
-    if ($project['id'] === $project_id) {
-        
-        // Seul le créateur peut réactiver
-        if (strtolower($project['creator_email']) === $email) {
-            $project['status'] = 'active';
-        }
-
-        break;
-    }
+if (!$project_id) {
+    header('Location: dashboard.php');
+    exit;
 }
 
-save_projects($projects);
+try {
+    $stmt = $pdo->prepare("UPDATE projects SET status = 'active' WHERE id = ? AND created_by = ?");
+    $stmt->execute([$project_id, $user['id']]);
+
+    if ($stmt->rowCount() > 0) {
+        log_activity($user['id'], 'reactivate_project', "project_$project_id", "Projet réactivé");
+    }
+
+} catch (Exception $e) {
+    // Silencieux en cas d'erreur
+}
 
 header('Location: dashboard.php');
 exit;

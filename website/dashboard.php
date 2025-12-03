@@ -6,7 +6,7 @@ require_login();
 $user = current_user();
 $email = strtolower($user['email']);
 
-$projects = load_projects();
+$projects = get_full_user_projects($user['id']);
 
 $created_projects = [];
 $member_projects = [];

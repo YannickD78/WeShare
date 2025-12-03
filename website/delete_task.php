@@ -9,6 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $project_id = $_POST['project_id'] ?? null;
 $task_id    = $_POST['task_id'] ?? null;
+$user = current_user();
 
 $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
     && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
@@ -39,52 +40,31 @@ if (!$project_id || !$task_id) {
     sendResponse(false, "Paramètres manquants.");
 }
 
-$projects = load_projects();
-$user = current_user();
-$user_email = strtolower($user['email']);
-
-foreach ($projects as &$project) {
-    if ($project['id'] !== $project_id) {
-        continue;
-    }
-
-    // Vérifier que l'utilisateur est membre du projet
-    $is_member = false;
-    foreach ($project['members'] as $member) {
-        if (strtolower($member['email']) === $user_email) {
-            $is_member = true;
-            break;
-        }
-    }
+try {
+    $stmt = $pdo->prepare("
+        SELECT 1 
+        FROM projects p 
+        LEFT JOIN participants part ON p.id = part.project_id 
+        WHERE p.id = ? AND (p.created_by = ? OR part.user_id = ?)
+        LIMIT 1
+    ");
+    $stmt->execute([$project_id, $user['id'], $user['id']]);
     
-    if (!$is_member) {
+    if (!$stmt->fetch()) {
         sendResponse(false, "Vous n'avez pas la permission de supprimer cette tâche.");
     }
 
-    // Find and remove the task
-    $task_removed = false;
-    foreach ($project['tasks'] as $index => &$task) {
-        if ($task['id'] === $task_id) {
-            unset($project['tasks'][$index]);
-            $task_removed = true;
-            break;
-        }
-    }
-    
-    if (!$task_removed) {
-        sendResponse(false, "Tâche introuvable.");
-    }
-    
-    // Re-index the tasks array
-    $project['tasks'] = array_values($project['tasks']);
-    break;
-}
+    $stmt = $pdo->prepare("DELETE FROM tasks WHERE id = ? AND project_id = ?");
+    $stmt->execute([$task_id, $project_id]);
 
-// Save changes
-try {
-    save_projects($projects);
-    sendResponse(true, "Tâche supprimée avec succès.");
+    if ($stmt->rowCount() > 0) {
+        log_activity($user['id'], 'delete_task', "task_$task_id", "Tâche supprimée");
+        sendResponse(true, "Tâche supprimée avec succès.");
+    } else {
+        sendResponse(false, "Tâche introuvable ou déjà supprimée.");
+    }
+
 } catch (Exception $e) {
-    sendResponse(false, "Erreur de sauvegarde: " . $e->getMessage());
+    sendResponse(false, "Erreur de base de données.");
 }
 ?>

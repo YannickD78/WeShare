@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $name = trim($_POST['project_name'] ?? '');
 $description = trim($_POST['project_description'] ?? '');
-$project_id = trim($_POST['project_id'] ?? '');
 
 if ($name === '') {
     $_SESSION['error'] = "Le nom du projet est obligatoire.";
@@ -19,106 +18,92 @@ if ($name === '') {
     exit;
 }
 
-// 处理成员
-$members = [];
-$member_names = $_POST['member_name'] ?? [];
-$member_emails = $_POST['member_email'] ?? [];
+try {
+    $pdo->beginTransaction();
 
-for ($i = 0; $i < count($member_emails); $i++) {
-    $m_name = trim($member_names[$i] ?? '');
-    $m_email = trim($member_emails[$i] ?? '');
-    if ($m_email === '' && $m_name === '') {
-        continue;
-    }
-    if (!filter_var($m_email, FILTER_VALIDATE_EMAIL)) {
-        continue; // 简单过滤无效 email
-    }
-    $members[] = [
-        'name' => $m_name ?: $m_email,
-        'email' => strtolower($m_email),
-    ];
-}
+    $stmt = $pdo->prepare("INSERT INTO projects (nom, description, created_by, status) VALUES (?, ?, ?, 'active')");
+    $stmt->execute([$name, $description, $user['id']]);
+    $project_id = $pdo->lastInsertId();
 
-// 确保创建人也在成员列表中（按 email 去重）
-$creator_email = strtolower($user['email']);
-$already_in = false;
-foreach ($members as $m) {
-    if (strtolower($m['email']) === $creator_email) {
-        $already_in = true;
-        break;
-    }
-}
-if (!$already_in) {
-    $members[] = [
-        'name' => $user['name'],
-        'email' => $creator_email,
-    ];
-}
+    $member_names = $_POST['member_name'] ?? [];
+    $member_emails = $_POST['member_email'] ?? [];
 
-// Traiter les tâches - au départ pas de progress/status, juste titre et assigné
-$tasks = [];
-$task_titles = $_POST['task_title'] ?? [];
-$task_assigned_to = $_POST['task_assigned_to'] ?? [];
-$task_modes = $_POST['task_mode'] ?? [];
-$task_recurring = $_POST['task_recurring'] ?? [];
-$task_recurring_days = $_POST['task_recurring_days'] ?? [];
+    $stmt = $pdo->prepare("INSERT INTO participants (project_id, user_id) VALUES (?, ?)");
+    $stmt->execute([$project_id, $user['id']]);
 
-for ($i = 0; $i < count($task_titles); $i++) {
-    $title = trim($task_titles[$i] ?? '');
-    $assigned_email = trim($task_assigned_to[$i] ?? '');
-    $mode = trim($task_modes[$i] ?? 'status');
-    $is_recurring = isset($task_recurring[$i]) && $task_recurring[$i] === 'on' ? true : false;
-    
-    // Valider le mode
-    if ($mode !== 'bar') {
-        $mode = 'status';
-    }
-    
-    if ($title === '') {
-        continue;
-    }
-    
-    // Parse recurring days
-    $recurring_days = [];
-    if ($is_recurring && isset($task_recurring_days[$i]) && is_array($task_recurring_days[$i])) {
-        $valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-        foreach ($task_recurring_days[$i] as $day) {
-            $day = strtolower(trim($day));
-            if (in_array($day, $valid_days)) {
-                $recurring_days[] = $day;
-            }
+    for ($i = 0; $i < count($member_emails); $i++) {
+        $m_email = strtolower(trim($member_emails[$i] ?? ''));
+        $m_name = trim($member_names[$i] ?? '');
+
+        if ($m_email === '' || !filter_var($m_email, FILTER_VALIDATE_EMAIL)) continue;
+        if ($m_email === strtolower($user['email'])) continue;
+
+        $existing = find_user_by_email($m_email);
+        $member_id = null;
+
+        if ($existing) {
+            $member_id = $existing['id'];
+        } else {
+            // On crée un compte invité
+            $new_user = create_user($m_name ?: explode('@', $m_email)[0], $m_email, 'weshare_invite');
+            $member_id = $new_user['id'];
+        }
+
+        // On vérif doublon avant insertion
+        $check = $pdo->prepare("SELECT id FROM participants WHERE project_id = ? AND user_id = ?");
+        $check->execute([$project_id, $member_id]);
+        if (!$check->fetch()) {
+            $stmt->execute([$project_id, $member_id]);
         }
     }
+
+    $task_titles = $_POST['task_title'] ?? [];
+    $task_assigned_to = $_POST['task_assigned_to'] ?? [];
+    $task_modes = $_POST['task_mode'] ?? [];
+    $task_recurring = $_POST['task_recurring'] ?? [];
+    $task_recurring_days = $_POST['task_recurring_days'] ?? [];
+
+    // On prépare l'insertion
+    $sqlTask = "INSERT INTO tasks (project_id, titre, assigned_to, status, progress, mode, is_recurring, recurring_days, daily_progress, daily_status) 
+                VALUES (?, ?, ?, 'todo', 0, ?, ?, ?, '{}', '{}')";
+    $stmtTask = $pdo->prepare($sqlTask);
+
+    for ($i = 0; $i < count($task_titles); $i++) {
+        $title = trim($task_titles[$i] ?? '');
+        if ($title === '') continue;
+
+        $assigned_email = strtolower(trim($task_assigned_to[$i] ?? ''));
+        $mode = trim($task_modes[$i] ?? 'status');
+        if ($mode !== 'bar') $mode = 'status';
+
+        $is_rec = isset($task_recurring[$i]) && $task_recurring[$i] === 'on' ? 1 : 0;
+        
+        // Encodage JSON des jours (tableau php -> texte JSON pour la bdd)
+        $rec_days_json = '[]';
+        if ($is_rec && isset($task_recurring_days[$i]) && is_array($task_recurring_days[$i])) {
+            $rec_days_json = json_encode($task_recurring_days[$i]);
+        }
+
+        // Pour trouver l'id via l'email
+        $assigned_id = null;
+        if ($assigned_email) {
+            $u = find_user_by_email($assigned_email);
+            if ($u) $assigned_id = $u['id'];
+        }
+
+        $stmtTask->execute([$project_id, $title, $assigned_id, $mode, $is_rec, $rec_days_json]);
+    }
+
+    $pdo->commit();
+    log_activity($user['id'], 'create_project', 'project', "Projet $project_id créé");
     
-    $tasks[] = [
-        'id' => generate_id('t_'),
-        'title' => $title,
-        'assigned_to' => strtolower($assigned_email),
-        'status' => 'todo',
-        'progress' => 0,
-        'mode' => $mode,
-        'is_recurring' => $is_recurring,
-        'recurring_days' => $recurring_days,
-    ];
+    header('Location: dashboard.php');
+    exit;
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    die("Erreur lors de la sauvegarde : " . $e->getMessage());
 }
-
-$projects = load_projects();
-
-$project = [
-    'id' => $project_id ?: generate_id('proj_'),
-    'name' => $name,
-    'description' => $description,
-    'creator_id' => $user['id'],
-    'creator_name' => $user['name'],
-    'creator_email' => $creator_email,
-    'members' => $members,
-    'tasks' => $tasks,
-    'created_at' => date('c'),
-    'status' => 'active',
-];
-
-$projects[] = $project;
-save_projects($projects);
-
-header('Location: dashboard.php');
-exit;
+?>

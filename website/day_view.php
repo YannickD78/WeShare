@@ -3,13 +3,10 @@ $page_title = 'Vue jour détaillée';
 require_once __DIR__ . '/includes/functions.php';
 require_login();
 
-// Reset completed recurring tasks if needed
-reset_daily_tasks();
-
 $user = current_user();
 $email = strtolower($user['email']);
 
-$projects = load_projects();
+$projects = get_full_user_projects($user['id']);
 
 // Get selected date or use today
 $selectedDateStr = $_GET['date'] ?? date('Y-m-d');

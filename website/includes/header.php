@@ -25,7 +25,7 @@ $page_title = $page_title ?? 'WeShare';
                     <a href="weekly_view.php">📅 Vue semaine</a>
                     <a href="stats_view.php">📊 Statistiques</a>
                     <a href="create_project.php">Créer un projet</a>
-                    <span class="user-label">Bonjour, <?= htmlspecialchars($user['name']) ?></span>
+                    <span class="user-label">Bonjour, <?= htmlspecialchars($user['name'] ?? '') ?></span>
                     <a href="logout.php" class="btn-logout">Déconnexion</a>
                 <?php else: ?>
                     <a href="index.php">Connexion</a>

@@ -3,7 +3,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
 /**
- * JSON file read/write utilities (à changer plus tard pour la base de données)
+ * JSON file read/write utilities
  */
 function load_json(string $file): array
 {
@@ -26,59 +26,17 @@ function save_json(string $file, array $data): void
 /**
  * User-related functions
  */
-/*function load_users(): array
-{
-    return load_json(USERS_FILE);
-}
-
-function save_users(array $users): void
-{
-    save_json(USERS_FILE, $users);
-}*/
-
-/*function find_user_by_email(string $email): ?array
-{
-    $users = load_users();
-    $email = strtolower(trim($email));
-    foreach ($users as $user) {
-        if (strtolower($user['email']) === $email) {
-            return $user;
-        }
-    }
-    return null;
-}*/
 
 function find_user_by_email(string $email): ?array
 {
     global $pdo;
 
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt = $pdo->prepare("SELECT id, nom as name, email, password FROM users WHERE email = ?");
     $stmt->execute([strtolower(trim($email))]);
     
     $user = $stmt->fetch();
     return $user ?: null;
 }
-
-/*function create_user(string $name, string $email, string $password): array
-{
-    $users = load_users();
-
-    if (find_user_by_email($email)) {
-        throw new Exception("Cet email est déjà utilisé.");
-    }
-
-    $user = [
-        'id' => uniqid('u_', true),
-        'name' => trim($name),
-        'email' => strtolower(trim($email)),
-        'password' => password_hash($password, PASSWORD_DEFAULT),
-    ];
-
-    $users[] = $user;
-    save_users($users);
-
-    return $user;
-}*/
 
 function create_user(string $name, string $email, string $password): array
 {
@@ -137,60 +95,85 @@ function require_login(): void
 }
 
 /**
- * Project-related functions (à changer plus tard pour la base de données)
+ * Project-related functions
  */
-function load_projects(): array
-{
-    $projects = load_json(PROJECTS_FILE);
+
+function get_full_user_projects(int $user_id): array {
+    global $pdo;
     
-    // Auto-migrate old data format
-    migrate_daily_progress_keys($projects);
-    
+    // On récupère les ID des projets (créés ou membre)
+    $sql = "SELECT DISTINCT p.id 
+            FROM projects p
+            LEFT JOIN participants part ON p.id = part.project_id
+            WHERE p.created_by = ? OR part.user_id = ?
+            ORDER BY p.created_at DESC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$user_id, $user_id]);
+    $projectIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (empty($projectIds)) return [];
+
+    $projects = [];
+
+    foreach ($projectIds as $pid) {
+        // Infos du projet
+        $stmt = $pdo->prepare("SELECT p.id, p.nom as name, p.description, p.status, p.created_at,
+                                      u.nom as creator_name, u.email as creator_email, p.created_by as creator_id
+                               FROM projects p
+                               JOIN users u ON p.created_by = u.id
+                               WHERE p.id = ?");
+        $stmt->execute([$pid]);
+        $projData = $stmt->fetch();
+
+        // Infos des membres
+        $stmt = $pdo->prepare("SELECT u.nom as name, u.email 
+                               FROM participants part
+                               JOIN users u ON part.user_id = u.id
+                               WHERE part.project_id = ?");
+        $stmt->execute([$pid]);
+        $members = $stmt->fetchAll();
+        
+        // On ajoute le créateur à la liste des membres si pas présent
+        $creatorInMembers = false;
+        foreach ($members as $m) {
+            if ($m['email'] === $projData['creator_email']) $creatorInMembers = true;
+        }
+        if (!$creatorInMembers) {
+            array_unshift($members, ['name' => $projData['creator_name'], 'email' => $projData['creator_email']]);
+        }
+        $projData['members'] = $members;
+
+        // Infos des taches
+        $stmt = $pdo->prepare("SELECT t.*, u.email as assigned_email 
+                               FROM tasks t 
+                               LEFT JOIN users u ON t.assigned_to = u.id 
+                               WHERE t.project_id = ?");
+        $stmt->execute([$pid]);
+        $dbTasks = $stmt->fetchAll();
+        
+        $tasks = [];
+        foreach ($dbTasks as $t) {
+            // On décode les JSON stockés en texte pour retrouver les tableaux php
+            $tasks[] = [
+                'id' => $t['id'],
+                'title' => $t['titre'],
+                'assigned_to' => $t['assigned_email'] ?? '', 
+                'assigned_to_id' => $t['assigned_to'],
+                'status' => $t['status'],
+                'progress' => (int)$t['progress'],
+                'mode' => $t['mode'],
+                'is_recurring' => (bool)$t['is_recurring'],
+                'recurring_days' => json_decode($t['recurring_days'] ?? '[]', true),
+                'daily_progress' => json_decode($t['daily_progress'] ?? '[]', true),
+                'daily_status' => json_decode($t['daily_status'] ?? '[]', true)
+            ];
+        }
+        $projData['tasks'] = $tasks;
+
+        $projects[] = $projData;
+    }
+
     return $projects;
-}
-
-function save_projects(array $projects): void
-{
-    // Auto-migrate old data format before saving
-    migrate_daily_progress_keys($projects);
-    
-    $tmpFile = PROJECTS_FILE . '.tmp';
-
-    // Encode en JSON propre
-    $json = json_encode($projects, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-
-    // S'assurer que le répertoire existe
-    $dataDir = dirname(PROJECTS_FILE);
-    if (!is_dir($dataDir)) {
-        throw new Exception("Le répertoire data n'existe pas: $dataDir");
-    }
-    
-    // Vérifier les permissions d'écriture
-    if (!is_writable($dataDir)) {
-        throw new Exception("Le répertoire data n'est pas accessible en écriture: $dataDir");
-    }
-
-    // Écrit dans un fichier temporaire avec verrou
-    $fp = fopen($tmpFile, 'c');
-    if (!$fp) {
-        throw new Exception("Impossible d'écrire dans le fichier temporaire: $tmpFile");
-    }
-
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-        throw new Exception("Impossible de verrouiller le fichier des projets.");
-    }
-
-    ftruncate($fp, 0);
-    fwrite($fp, $json);
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
-
-    // Remplace le fichier original
-    if (!rename($tmpFile, PROJECTS_FILE)) {
-        throw new Exception("Impossible de renommer le fichier temporaire vers " . PROJECTS_FILE);
-    }
 }
 
 
@@ -306,49 +289,6 @@ function format_recurring_days(array $recurring_days): string
     }
     
     return implode(', ', $labels);
-}
-
-/**
- * Reset completed recurring tasks at the start of a new day
- * For tasks completed on their assigned day, reset them if it's a new day
- */
-function reset_daily_tasks(): void
-{
-    try {
-        $projects = load_projects();
-        $today = new DateTime('today');
-        $modified = false;
-        
-        foreach ($projects as &$project) {
-            foreach ($project['tasks'] as &$task) {
-                // Only handle non-recurring tasks
-                // Recurring tasks manage their state through daily_progress per day
-                if (($task['is_recurring'] ?? false)) {
-                    continue;
-                }
-                
-                // Only reset non-recurring tasks that are complete
-                if (!is_task_complete($task)) {
-                    continue;
-                }
-                
-                // For non-recurring tasks, reset them
-                $mode = $task['mode'] ?? 'status';
-                if ($mode === 'bar') {
-                    $task['progress'] = 0;
-                } else {
-                    $task['status'] = 'todo';
-                }
-                $modified = true;
-            }
-        }
-        
-        if ($modified) {
-            save_projects($projects);
-        }
-    } catch (Exception $e) {
-        // Silently fail - this is a maintenance function
-    }
 }
 
 /**
@@ -566,3 +506,15 @@ function get_relevant_date_for_recurring_task(array $task): ?string
     return null;
 }
 
+// Track user activity
+function log_activity(?int $user_id, string $action, string $target, string $details = ''): void {
+    global $pdo;
+    try {
+        $url = $_SERVER['REQUEST_URI'] ?? '';
+        $sql = "INSERT INTO activity_logs (user_id, type_action, element_cible, page_url, details) VALUES (?, ?, ?, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$user_id, $action, $target, $url, $details]);
+    } catch (Exception $e) {
+        // Silencieux pour ne pas bloquer
+    }
+}

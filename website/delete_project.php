@@ -9,45 +9,26 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $project_id = $_POST['project_id'] ?? '';
 $user = current_user();
-$email = strtolower($user['email']);
 
-$projects = load_projects();
-$project_found = false;
-$is_creator = false;
-
-foreach ($projects as $project) {
-    if ($project['id'] === $project_id) {
-        $project_found = true;
-        // Seul le créateur peut supprimer
-        if (strtolower($project['creator_email']) === $email) {
-            $is_creator = true;
-        }
-        break;
-    }
-}
-
-if (!$project_found) {
+if (!$project_id) {
     $_SESSION['error'] = "Projet introuvable.";
     header('Location: dashboard.php');
     exit;
 }
 
-if (!$is_creator) {
-    $_SESSION['error'] = "Seul le créateur peut supprimer ce projet.";
-    header('Location: dashboard.php');
-    exit;
+try {
+    $stmt = $pdo->prepare("DELETE FROM projects WHERE id = ? AND created_by = ?");
+    $stmt->execute([$project_id, $user['id']]);
+
+    if ($stmt->rowCount() > 0) {
+        log_activity($user['id'], 'delete_project', "project_$project_id", "Projet supprimé");
+        $_SESSION['success'] = "Le projet a été supprimé avec succès.";
+    } else {
+        $_SESSION['error'] = "Impossible de supprimer ce projet (vous n'êtes peut-être pas le créateur).";
+    }
+
+} catch (Exception $e) {
+    $_SESSION['error'] = "Erreur technique : " . $e->getMessage();
 }
-
-// Supprimer le projet
-$projects = array_filter($projects, function ($p) use ($project_id) {
-    return $p['id'] !== $project_id;
-});
-
-// Réindexer le tableau pour éviter les problèmes avec les clés
-$projects = array_values($projects);
-
-save_projects($projects);
-
-$_SESSION['success'] = "Le projet a été supprimé avec succès.";
 header('Location: dashboard.php');
 exit;
