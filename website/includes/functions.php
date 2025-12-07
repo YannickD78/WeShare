@@ -76,7 +76,7 @@ function login_user(array $user): void
 {
     $_SESSION['user'] = [
         'id' => $user['id'],
-        'name' => $user['nom'],
+        'name' => $user['name'],
         'email' => $user['email'],
     ];
 }
